@@ -89,7 +89,7 @@ const sb = window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistS
 const S = {
   me: null, view: 'home', open: null, edit: null, filter: 'all', notesOpen: false,
   adminSel: null, draft: null, showHow: false, busy: false, titleTouched: false,
-  staff: [], types: [], steps: [], ringi: [], route: [], log: [], notices: [], depts: [], posts: [],
+  staff: [], types: [], shifts: [], work: [], workMonth: null, teamDept: null, teamWho: null, prefill: null, steps: [], ringi: [], route: [], log: [], notices: [], depts: [], posts: [],
   orgDraft: [], orgPreview: null, orgPick: null,
   files: [], pick: [], listFilter: 'wait', moreOpen: false, soumuOpen: true,
   step: 1, sel: new Set(), inboxTab: 'all',
@@ -123,14 +123,18 @@ const myBossDepts = () => S.posts.filter(p => p.holder_id === S.me.id && p.is_bo
 const proxyTargets = () => S.staff.filter(s => s.id !== S.me.id && (S.me.is_soumu || deptChain(s.dept_id).some(d => myBossDepts().includes(d))));
 
 async function loadAll() {
-  const tables = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files'];
+  const tables = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work'];
   const res = await Promise.all(tables.map(t => sb.from(t).select('*')));
   // 添付の表は、Supabase に貼り直すまではまだない。そのときも残りは使えるようにする。
   S.filesReady = !res[9].error;
   if (!S.filesReady) res[9] = { data: [] };
+  // 勤怠の表も、貼り直すまではない
+  S.workReady = !res[10].error && !res[11].error;
+  if (!S.workReady) { res[10] = { data: [] }; res[11] = { data: [] }; }
   const err = res.find(r => r.error);
   if (err) throw err.error;
-  [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files] = res.map(r => r.data || []);
+  [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work] = res.map(r => r.data || []);
+  S.shifts.sort((a, b) => a.sort - b.sort);
   S.depts.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.posts.sort((a, b) => a.sort - b.sort || a.id - b.id);
   const D = Object.fromEntries(S.depts.map(d => [d.id, d]));
@@ -274,23 +278,26 @@ function rows(list, empty, opts = {}) {
   </tbody></table></div>`;
 }
 const tabs = (items, curK, attr) => `<div class="tabs" role="tablist">${items.map(([k, l, n]) => `<button type="button" role="tab" ${attr}="${k}" aria-selected="${curK === k}">${l}${n != null ? `<span class="tc num">${n}</span>` : ''}</button>`).join('')}</div>`;
-const summary = items => `<div class="sums">${items.map(([ic, cls, label, n, nav]) => `<button type="button" class="sumc" ${nav}><span class="si ${cls}">${icon(ic)}</span><span><span class="sl">${label}</span><span class="sv num">${n}<small>件</small></span></span></button>`).join('')}</div>`;
+const summary = items => `<div class="sums">${items.map(([ic, cls, label, n, nav, unit = '件']) => `<button type="button" class="sumc" ${nav}><span class="si ${cls}">${icon(ic)}</span><span><span class="sl">${label}</span><span class="sv num">${typeof n === 'string' ? n : `${n}<small>${unit}</small>`}</span></span></button>`).join('')}</div>`;
 
 // メニュー。パソコンでは左に縦に、スマホでは下のタブ（よく使うもの）＋「その他」。
 function navHtml() {
   const w = waitingForMe().length;
   const back = S.ringi.filter(r => isMine(r) && r.status === 'back').length;
   const ap = isApprover();
+  const todo = myTodo();
   const cur = k => S.view === k && !S.open ? 'aria-current="page"' : '';
   const b = (k, label, ic, badge = '', cls = '') => `<button type="button" class="${cls}" data-nav="${k}" ${cur(k)}>${icon(ic)}<span class="nl">${label}</span>${badge}</button>`;
   const main = `<div class="nmain">
     <button type="button" class="ncreate" data-nav="new" ${cur('new')}>${icon('new')}<span class="nl">申請する</span></button>
     ${ap ? b('home', '決裁待ち', 'inbox', w ? `<span class="badge">${w}</span>` : '', 'tab') : b('home', 'ホーム', 'home', '', 'tab')}
     ${b('list', 'わたしの申請', 'doc', back ? `<span class="badge warn" title="差し戻し">${back}</span>` : '', 'tab')}
+    ${S.workReady ? b('work', 'わたしの勤務', 'clock', todo ? `<span class="badge warn" title="確かめること">${todo}</span>` : '', 'tab') : ''}
     <button type="button" class="tab nmorebtn" data-a="more" aria-expanded="${S.moreOpen}">${icon('more')}<span class="nl">その他</span></button>
   </div>`;
   const sub = `<div class="nsub ${S.moreOpen ? 'open' : ''}">
     ${ap ? b('done', '決裁した履歴', 'hist') : ''}
+    ${S.workReady && canTeam() ? b('team', '部署の勤務', 'cal') : ''}
     ${b('org', '組織図', 'org')}
     ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}` : ''}
     <div class="ngroup">使い方</div>${b('howto', 'お試しの進め方', 'info')}
@@ -349,6 +356,7 @@ function inbox(withMinis) {
   const stuck = S.me.is_soumu ? S.ringi.filter(r => r.status === 'wait' && waitDays(r) >= 3) : [];
   return `
   ${pageHead('決裁待ち', `あなた（${esc(myPost)}）の承認を待っている申請です。待っている日数が長い順に並んでいます。`)}
+  ${withMinis ? punchCard(true) : ''}
   ${summary([['inbox', 'turn', '決裁待ち', all.length, 'data-a="noop"'], ['clock', 'back', '3日以上待っている', late, 'data-a="noop"'], ['check', 'ok', '今月 決裁した', doneMonth, isApprover() ? 'data-nav="done"' : '']])}
   <section class="panel flush">
     ${tabs([['all', 'すべて', all.length], ...groups.filter(g => g !== 'その他' || all.some(r => grp(r) === g)).map(g => [g, g, all.filter(r => grp(r) === g).length])], S.inboxTab, 'data-ibt')}
@@ -374,6 +382,7 @@ function staffHome() {
   const dots = r => { const rt = routeOf(r.id); return `<span class="dots">${rt.map((x, i) => `<i class="${x.stamped_by ? 'on' : i === r.stage ? 'now' : ''}"></i>`).join('')}</span>`; };
   return `
   ${pageHead(`${esc(S.me.name)} さん`, `${todayLabel()}　自分が出した申請がいまどこまで進んでいるかが分かります。`, `<button class="btn primary" type="button" data-nav="new">${icon('new')}申請する</button>`)}
+  ${punchCard(true)}
   ${back.map(r => `<section class="alert back"><span class="ai">${icon('undo')}</span><div class="ax"><b>差し戻されています：${esc(r.title)}</b>
     <p>${esc(P(r.last_by).name)}さんより「${esc(r.last_comment)}」</p></div><button class="btn primary" type="button" data-open="${r.id}">直して出し直す</button></section>`).join('')}
   ${summary([['clock', 'wait', '回覧中', going.length, 'data-nav="list" data-lf="wait"'], ['undo', 'back', '差し戻し', back.length, 'data-nav="list" data-lf="back"'], ['check', 'ok', '決裁済み', mine.filter(r => r.status === 'ok').length, 'data-nav="list" data-lf="ok"']])}
@@ -382,7 +391,7 @@ function staffHome() {
       <b>${esc(r.title)}</b>${dots(r)}<span class="sub">${esc(curText(r))}</span></li>`).join('')}</ul>`
       : emptyArt('回覧中の申請はありません', '「申請する」から、有給休暇や物品購入などを出せます。')}</section>
   ${done.length ? `<section class="panel flush"><div class="panel-h"><h2>最近 決裁されたもの</h2></div><ul class="mini">${done.map(r => `<li class="click" data-open="${r.id}">${pill(r)}<div class="x"><b>${esc(r.title)}</b><span>${esc(r.type_name)}・${fmtDay(decidedAt(r))} 決裁</span></div>${icon('chevr')}</li>`).join('')}</ul></section>` : ''}
-  <section class="panel tip"><span class="ai">${icon('info')}</span><div><b>はじめての方へ</b><p class="sub" style="margin:2px 0 0">お試しの進め方（15分ほど）を見ながら、何人かの立場で試してみてください。</p></div><button class="btn" type="button" data-nav="howto">進め方を見る</button></section>`;
+  <section class="panel tip"><span class="ai">${icon('info')}</span><div><b>はじめての方へ</b><p class="sub" style="margin:2px 0 0">お試しの進め方（20分ほど）を見ながら、何人かの立場で試してみてください。</p></div><button class="btn" type="button" data-nav="howto">進め方を見る</button></section>`;
 }
 
 VIEWS.howto = function () {
@@ -393,12 +402,235 @@ VIEWS.howto = function () {
     'もう一度<b>中村さん</b>で入り、差し戻された申請を<b>直して出し直す</b>（最初の段から回り直す）',
     '<b>小林さん</b>（<code>kobayashi</code>）で<b>有給休暇</b>や<b>遅刻・早退届</b>を出す。<b>井上師長</b>で入ると、チェックを付けて<b>まとめて承認</b>できる。そのあと<b>総務の受付</b>（<code>aoki</code>）へ回る',
     '<b>総務の青木さん</b>（<code>aoki</code>）で入り、<b>親睦会（慶弔）を中村さんの代わりに申請</b>する。「種類と回る順番」で回る順番や金額の条件を変えてみる',
+    '<b>中村さん</b>で「わたしの勤務」を開き、<b>出勤する</b>を押す。3日前の<b>退勤が遅い日（ずれ）</b>の「時間外の事後の申請」から申請を出す（日にちや時刻は入った状態で開く）',
+    '<b>井上師長</b>で「その他」の<b>部署の勤務</b>を開き、確かめることがある人を見る。中村さんの事後の申請を承認し、<b>総務の青木さん</b>が受け付けると、中村さんの勤務の記録に「時間外」と出る',
+    '<b>清水さん</b>（<code>shimizu</code>）で「わたしの勤務」を開き、<b>退勤の打刻もれ</b>から「打刻の修正」を申請する。<b>小林さん</b>はいま勤務中なので、<b>退勤する</b>を押せる',
     '<b>総務の青木さん</b>で「組織図」を開き、<b>3階東病棟の井上師長のカードを、1階病棟の看護師長の席へ動かす</b>（2人が入れ替わる）。確定の前に、担当が変わる申請の一覧を見る',
   ];
-  return `${pageHead('お試しの進め方', '15分ほどで、申請から決裁までの流れを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
+  return `${pageHead('お試しの進め方', '20分ほどで、申請から決裁と勤怠までの流れを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
   <section class="panel"><ol class="steps">${steps.map(s => `<li><div>${s}</div></li>`).join('')}</ol>
   <p class="sub" style="margin:16px 0 0">何人かで同じ人に入っても大丈夫です。総務の人で入ると「種類と回る順番」の下から、見本の状態に戻せます。</p></section>`;
 };
+
+// ---------------------------------------------------------------- 勤怠（軽め）
+// 打刻と、決裁された申請（有給・欠勤・遅刻早退・時間外・打刻の修正）を合わせて、1日ごとの勤務の記録にする。
+// 退勤が予定（時間外が認められていればその終わり）より遅いときは、切り捨てずに「ずれ」として出す。
+const GAP_MIN = 15;   // これ以上のずれを「確かめること」にする（仮の値）
+const SH = id => S.shifts.find(x => x.id === id);
+const ymdOf = ms => new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(new Date(ms));
+const hmOf = ms => new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+const atOf = (ymd, t, plusDay = 0) => new Date(`${ymd}T${String(t).slice(0, 5)}:00+09:00`).getTime() + plusDay * DAY;
+const addDays = (ymd, n) => ymdOf(atOf(ymd, '12:00') + n * DAY);
+const dval = (r, k) => ((r.details || []).find(d => d.k === k) || {}).value || '';
+const hmLen = m => m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + '分' : ''}` : `${m}分`;
+const hmShort = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+const shiftTime = sh => `${sh.start_t.slice(0, 5)}〜${sh.next_day ? '翌' : ''}${sh.end_t.slice(0, 5)}`;
+// 申請の種類を勤怠の見方で分ける
+function wkind(r) {
+  const n = r.type_name || '';
+  if (n.startsWith('有給')) return 'leave';
+  if (n.startsWith('欠勤')) return 'absent';
+  if (n.startsWith('遅刻')) return 'late';
+  if (n.startsWith('時間外')) return 'ot';
+  if (n.startsWith('打刻の修正')) return 'fix';
+  return null;
+}
+function reqDays(r) {
+  const k = wkind(r); if (!k) return [];
+  if (k === 'leave' || k === 'absent') {
+    const f = dval(r, 'from'); if (!f) return [];
+    const t = dval(r, 'to') || f; const out = [];
+    for (let x = f; x <= t && out.length < 62; x = addDays(x, 1)) out.push(x);
+    return out;
+  }
+  const d = dval(r, 'date'); return d ? [d] : [];
+}
+const otLen = r => { const f = dval(r, 'from'), t = dval(r, 'to'); if (!f || !t) return 0; let m = (atOf('2000-01-01', t) - atOf('2000-01-01', f)) / 6e4; if (m <= 0) m += 1440; return Math.round(m); };
+const typeByName = n => S.types.find(t => t.name === n && t.in_use) || S.types.find(t => t.name === n);
+
+// 1人の1日分。打刻・勤務の種類・申請・確かめること。
+function dayInfo(sid, ymd) {
+  const w = S.work.find(x => x.staff_id === sid && x.day === ymd);
+  const reqs = S.ringi.filter(r => r.owner_id === sid && (r.status === 'ok' || r.status === 'wait') && reqDays(r).includes(ymd)).sort((a, b) => a.id - b.id);
+  const ok = k => reqs.filter(r => wkind(r) === k && r.status === 'ok');
+  const wait = k => reqs.filter(r => wkind(r) === k && r.status === 'wait');
+  const sh = w ? SH(w.shift_id) : null;
+  let inAt = w ? Date.parse(w.in_at) : null, outAt = w && w.out_at ? Date.parse(w.out_at) : null;
+  const fix = ok('fix').pop();
+  if (fix) {
+    const fi = dval(fix, 'in'), fo = dval(fix, 'out');
+    if (fi) inAt = atOf(ymd, fi);
+    if (fo) { let o = atOf(ymd, fo); if (inAt && o <= inAt) o += DAY; outAt = o; }
+  }
+  const start = sh ? atOf(ymd, sh.start_t) : null, end = sh ? atOf(ymd, sh.end_t, sh.next_day ? 1 : 0) : null;
+  const worked = inAt && outAt && sh ? Math.max(0, Math.round((outAt - inAt) / 6e4) - sh.break_min) : null;
+  const otOk = ok('ot').reduce((a, r) => a + otLen(r), 0);
+  const otWait = wait('ot').reduce((a, r) => a + otLen(r), 0);
+  const over = outAt && end ? Math.max(0, Math.round((outAt - end) / 6e4)) : 0;
+  const late = inAt && start ? Math.max(0, Math.round((inAt - start) / 6e4)) : 0;
+  const open = !!w && !outAt;
+  const missing = open && Date.now() - inAt > 20 * 36e5;
+  const issues = [];
+  if (missing) issues.push(wait('fix').length ? { k: 'fixwait', t: '打刻の修正を申請中' } : { k: 'miss', t: '退勤の打刻もれ' });
+  if (over - otOk >= GAP_MIN) issues.push(otWait ? { k: 'otwait', t: `時間外 ${hmLen(over - otOk)} を申請中` } : { k: 'gap', t: `退勤が予定より ${hmLen(over - otOk)} 遅い`, mins: over - otOk });
+  if (late > 0 && !ok('late').length) issues.push(wait('late').length ? { k: 'latewait', t: '遅刻届を申請中' } : { k: 'late', t: `出勤が ${hmLen(late)} 遅い`, mins: late });
+  return { ymd, w, sh, reqs, fix, inAt, outAt, start, end, worked, otOk, over, late, open, missing,
+    leave: ok('leave')[0], leaveWait: wait('leave')[0], absent: ok('absent')[0], absentWait: wait('absent')[0],
+    lateOk: ok('late')[0], issues, todo: issues.filter(i => ['miss', 'gap', 'late'].includes(i.k)) };
+}
+function monthDays(ym) {
+  const [y, m] = ym.split('-').map(Number); const n = new Date(y, m, 0).getDate();
+  return Array.from({ length: n }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`);
+}
+const curMonth = () => S.workMonth || todayYmd().slice(0, 7);
+const monthLabel = ym => `${+ym.slice(0, 4)}年${+ym.slice(5)}月`;
+function monthSum(sid, ym) {
+  const today = todayYmd();
+  const days = monthDays(ym).filter(d => d <= today).map(d => dayInfo(sid, d));
+  return {
+    days,
+    workDays: days.filter(x => x.w).length,
+    leave: days.filter(x => x.leave).reduce((a, x) => a + (dval(x.leave, 'how') && dval(x.leave, 'how') !== '1日' ? 0.5 : 1), 0),
+    absent: days.filter(x => x.absent).length,
+    late: days.filter(x => x.lateOk).length,
+    ot: days.reduce((a, x) => a + x.otOk, 0),
+    todo: days.reduce((a, x) => a + x.todo.length, 0),
+  };
+}
+const myTodo = () => S.workReady ? monthSum(S.me.id, todayYmd().slice(0, 7)).todo + monthSum(S.me.id, addDays(todayYmd().slice(0, 7) + '-01', -1).slice(0, 7)).todo : 0;
+const canTeam = () => S.me.is_soumu || myBossDepts().length > 0;
+const teamDepts = () => S.depts.filter(d => d.parent_id != null && S.staff.some(s => s.dept_id === d.id)
+  && (S.me.is_soumu || deptChain(d.id).some(x => myBossDepts().includes(x))));
+
+// 今日の打刻（いちばん新しい勤務）
+function myOpenWork() {
+  const mine = S.work.filter(x => x.staff_id === S.me.id).sort((a, b) => Date.parse(b.in_at) - Date.parse(a.in_at));
+  const last = mine[0];
+  if (last && !last.out_at && Date.now() - Date.parse(last.in_at) < 20 * 36e5) return { state: 'in', w: last };
+  const today = mine.find(x => x.day === todayYmd());
+  if (today) return { state: 'done', w: today };
+  return { state: 'none' };
+}
+function guessShift() {
+  const now = Date.now(), d = todayYmd();
+  return S.shifts.slice().sort((a, b) => Math.abs(now - atOf(d, a.start_t)) - Math.abs(now - atOf(d, b.start_t)))[0];
+}
+function punchCard(compact) {
+  if (!S.workReady) return '';
+  const st = myOpenWork();
+  const nowTxt = hmOf(Date.now());
+  let status, ctl;
+  if (st.state === 'in') {
+    const sh = SH(st.w.shift_id);
+    status = `<b>勤務中</b>：${st.w.day !== todayYmd() ? md(st.w.day) + ' ' : ''}${hmOf(Date.parse(st.w.in_at))} に出勤（${esc(sh?.name || '')} ${sh ? shiftTime(sh) : ''}）`;
+    ctl = `<button class="btn primary punchbtn out" type="button" data-a="punch">${icon('clock')}退勤する</button>`;
+  } else if (st.state === 'done') {
+    status = `今日は ${hmOf(Date.parse(st.w.in_at))} 出勤、${hmOf(Date.parse(st.w.out_at))} 退勤。おつかれさまでした`;
+    ctl = `<button class="btn punchbtn" type="button" disabled>今日の打刻は終わりました</button>`;
+  } else {
+    const g = guessShift();
+    status = 'まだ出勤していません';
+    ctl = `<label class="f pcshift"><span class="fl">勤務の種類</span><select id="pcShift">${S.shifts.map(s => `<option value="${s.id}" ${s.id === g?.id ? 'selected' : ''}>${esc(s.name)}（${shiftTime(s)}）</option>`).join('')}</select></label>
+      <button class="btn primary punchbtn" type="button" data-a="punch">${icon('clock')}出勤する</button>`;
+  }
+  return `<section class="panel punch ${compact ? 'compact' : ''}">
+    <div class="pcl"><span class="pct">今日の打刻</span><b class="pcclock num" id="pcClock">${nowTxt}</b><span class="pcs">${status}</span></div>
+    <div class="pcr">${ctl}</div>
+    ${compact ? '' : '<p class="pcnote">本番では、社員証に貼ったICシールを打刻用のタブレットにかざします。お試し版ではこのボタンで打刻します。</p>'}
+  </section>`;
+}
+
+// 1か月の勤務の表（本人も所属長も同じ表）。mine=true なら直すためのボタンを出す。
+function monthTable(sid, ym, mine) {
+  const today = todayYmd();
+  const rowsH = monthDays(ym).map(d => {
+    const x = dayInfo(sid, d);
+    const wd = new Date(`${d}T12:00:00+09:00`).getDay();
+    const fut = d > today;
+    const tags = [];
+    if (x.leave) tags.push(`<span class="lbl ok">有給 ${esc(dval(x.leave, 'how') || '1日')}</span>`);
+    if (x.leaveWait) tags.push(`<span class="lbl wait">有給（申請中）</span>`);
+    if (x.absent) tags.push(`<span class="lbl no">欠勤</span>`);
+    if (x.absentWait) tags.push(`<span class="lbl wait">欠勤届（申請中）</span>`);
+    if (x.lateOk) tags.push(`<span class="lbl ok">${esc(dval(x.lateOk, 'kind') || '遅刻')}届 ${esc(dval(x.lateOk, 'time'))}</span>`);
+    x.reqs.filter(r => wkind(r) === 'ot' && r.status === 'ok').forEach(r => tags.push(`<span class="lbl ok">時間外 ${esc(dval(r, 'from'))}〜${esc(dval(r, 'to'))}</span>`));
+    if (x.fix) tags.push(`<span class="lbl ok">打刻を修正</span>`);
+    if (x.open && !x.missing) tags.push(`<span class="lbl turn">勤務中</span>`);
+    x.issues.forEach(i => tags.push(`<span class="lbl ${['miss', 'gap', 'late'].includes(i.k) ? 'back' : 'wait'}">${esc(i.t)}</span>`));
+    const acts = mine ? x.issues.map(i =>
+      i.k === 'gap' ? `<button class="btn sm" type="button" data-a="wreq" data-kind="ot" data-day="${d}">時間外の事後の申請</button>`
+      : i.k === 'miss' ? `<button class="btn sm" type="button" data-a="wreq" data-kind="fix" data-day="${d}">打刻の修正を申請</button>`
+      : i.k === 'late' ? `<button class="btn sm" type="button" data-a="wreq" data-kind="late" data-day="${d}">遅刻届を出す</button>` : '').join('') : '';
+    const orig = (v, ms) => x.fix && x.w && v && ms !== v ? `<s class="muted">${hmOf(v)}</s> ` : '';
+    const tIn = x.inAt ? `${orig(x.w ? Date.parse(x.w.in_at) : null, x.inAt)}${hmOf(x.inAt)}` : '';
+    const tOut = x.outAt ? `${orig(x.w && x.w.out_at ? Date.parse(x.w.out_at) : null, x.outAt)}${ymdOf(x.outAt) !== d ? '翌' : ''}${hmOf(x.outAt)}` : x.missing ? '<span class="miss">なし</span>' : '';
+    return `<tr class="${fut ? 'fut' : ''} ${d === today ? 'today' : ''} ${x.todo.length ? 'todo' : ''}">
+      <td class="w-day num ${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}">${+d.slice(8)}<small>（${WEEK[wd]}）</small></td>
+      <td class="w-sh">${x.sh ? esc(x.sh.name) : (x.leave || x.absent) ? '' : '<span class="muted">—</span>'}</td>
+      <td class="w-in num">${tIn}</td><td class="w-out num">${tOut}</td>
+      <td class="w-hrs num">${x.worked != null ? hmShort(x.worked) : ''}</td>
+      <td class="w-ot num">${x.otOk ? hmShort(x.otOk) : ''}</td>
+      <td class="w-note"><div class="tags">${tags.join('')}</div>${acts ? `<div class="wacts">${acts}</div>` : ''}</td></tr>`;
+  }).join('');
+  return `<div class="wtable"><table><thead><tr><th>日</th><th>勤務</th><th>出勤</th><th>退勤</th><th>働いた時間</th><th>時間外</th><th>申請・確かめること</th></tr></thead><tbody>${rowsH}</tbody></table></div>`;
+}
+const monthNav = ym => `<div class="mnav"><button class="btn sm" type="button" data-a="mprev" aria-label="前の月">${icon('back')}前の月</button><b class="num">${monthLabel(ym)}</b><button class="btn sm" type="button" data-a="mnext" ${ym >= todayYmd().slice(0, 7) ? 'disabled' : ''} aria-label="次の月">次の月${icon('chevr')}</button></div>`;
+const hmHtml = m => m >= 60 ? `${Math.floor(m / 60)}<small>時間</small>${m % 60 ? (m % 60) + '<small>分</small>' : ''}` : `${m}<small>分</small>`;
+const workSums = sm => summary([['cal', 'turn', '出勤した日', sm.workDays, 'data-a="noop"', '日'], ['clock', 'ok', '認められた時間外', hmHtml(sm.ot), 'data-a="noop"'], ['info', 'back', '確かめること', sm.todo, 'data-a="noop"']]);
+
+VIEWS.work = function () {
+  if (!S.workReady) return `${pageHead('わたしの勤務', '')}<section class="panel"><p>勤怠は、まだ準備中です（Supabase への貼り直しが終わると使えます）。</p></section>`;
+  const ym = curMonth(); const sm = monthSum(S.me.id, ym);
+  return `${pageHead('わたしの勤務', '出勤・退勤の打刻と、1か月の勤務の記録です。有給・遅刻早退・時間外などの申請が決裁されると、その日に出ます。')}
+  ${punchCard(false)}
+  ${sm.todo ? guide(`<b>確かめることが ${sm.todo}件あります。</b>退勤が予定より遅い日は「時間外の事後の申請」を、打刻を忘れた日は「打刻の修正」を出してください。上長が中身を見て決めます（切り捨てはしません）。`) : ''}
+  ${workSums(sm)}
+  <section class="panel flush"><div class="panel-h"><h2>勤務の記録</h2>${monthNav(ym)}</div>${monthTable(S.me.id, ym, true)}
+  <p class="small muted pfoot">働いた時間は、休憩（日勤など60分・夜勤120分、仮の値）を差し引いた時間です。予定より ${GAP_MIN}分以上遅い退勤を「確かめること」にしています（仮の値）。</p></section>`;
+};
+
+VIEWS.team = function () {
+  if (!S.workReady || !canTeam()) return VIEWS.home();
+  const ds = teamDepts();
+  if (!ds.some(d => d.id === S.teamDept)) S.teamDept = ds[0]?.id;
+  const ym = curMonth();
+  const people = S.staff.filter(s => s.dept_id === S.teamDept);
+  const sums = people.map(p => [p, monthSum(p.id, ym)]);
+  const who = S.teamWho && people.some(p => p.id === S.teamWho) ? S.teamWho : null;
+  return `${pageHead('部署の勤務', '部署の人の1か月の勤務です。ずれや打刻もれのある人には、事後の申請や打刻の修正を出してもらい、申請の画面で判断します。')}
+  <section class="panel flush"><div class="panel-h"><div class="teamsel">${ds.length > 1 ? `<label class="f"><span class="vh">部署</span><select id="tmDept">${ds.map(d => `<option value="${d.id}" ${d.id === S.teamDept ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>` : `<h2>${esc(ds[0]?.name || '')}</h2>`}</div>${monthNav(ym)}</div>
+  ${sums.length ? `<div class="ttable"><table class="teamt"><thead><tr><th>氏名</th><th class="r">出勤した日</th><th class="r">有給</th><th class="r">欠勤</th><th class="r">遅刻・早退</th><th class="r">認められた時間外</th><th>確かめること</th></tr></thead><tbody>
+    ${sums.map(([p, s]) => `<tr class="click ${who === p.id ? 'sel' : ''}" data-who="${p.id}" tabindex="0">
+      <td class="t-who"><span class="whowrap">${avatar(p.id, 'sm')}<span><span class="tlink">${esc(p.name)}</span><span class="sub">${esc(titleOf(p))}</span></span></span></td>
+      <td class="r num">${s.workDays}日</td><td class="r num">${s.leave ? s.leave + '日' : '—'}</td><td class="r num">${s.absent ? s.absent + '日' : '—'}</td><td class="r num">${s.late ? s.late + '回' : '—'}</td>
+      <td class="r num">${s.ot ? hmShort(s.ot) : '—'}</td>
+      <td>${s.todo ? `<span class="lbl back">${icon('info')}${s.todo}件</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}
+  </tbody></table></div>` : emptyArt('この部署の勤務の記録はまだありません')}</section>
+  ${who ? `<section class="panel flush" id="teamWho"><div class="panel-h"><h2>${esc(P(who).name)}さんの勤務（${monthLabel(ym)}）</h2><button class="btn text sm" type="button" data-a="closeWho">閉じる</button></div>${monthTable(who, ym, who === S.me.id)}</section>` : guide('名前を押すと、その人の1日ごとの記録が見られます。')}`;
+};
+
+// 勤務の記録から、申請の画面を中身を入れた状態で開く
+function openWorkReq(kind, day) {
+  const x = dayInfo(S.me.id, day);
+  let t, vals = {}, body = '';
+  if (kind === 'ot') {
+    t = typeByName('時間外勤務（事後の申請）');
+    const from = x.end ? hmOf(x.end + x.otOk * 6e4) : '';
+    vals = { date: day, kind: '残業', from, to: x.outAt ? hmOf(x.outAt) : '' };
+    body = `打刻では ${x.outAt ? hmOf(x.outAt) : ''} に退勤しています（予定の終わりは ${x.end ? hmOf(x.end) : ''}）。`;
+  } else if (kind === 'fix') {
+    t = typeByName('打刻の修正');
+    vals = { date: day, in: x.inAt ? hmOf(x.inAt) : '' };
+    body = '退勤の打刻を忘れました。';
+  } else {
+    t = typeByName('遅刻・早退届');
+    vals = { date: day, kind: '遅刻', time: x.inAt ? hmOf(x.inAt) : '' };
+  }
+  if (!t) { toast('この申請の種類が見つかりません。総務の「種類と回る順番」で「使う」にしてください'); return; }
+  S.prefill = { type: t.id, vals, body };
+  S.view = 'new'; S.open = null; S.edit = null; S.step = 2; S.newType = t.id; S.pick = []; S.titleTouched = false; S.notesOpen = false;
+  render(); window.scrollTo({ top: 0 });
+}
 
 const LF = [['wait', '回覧中'], ['back', '差し戻し'], ['ok', '決裁済み'], ['no', '却下'], ['all', 'すべて']];
 VIEWS.list = function () {
@@ -451,6 +683,8 @@ VIEWS.new = function () {
   const t = T(ed ? ed.type_id : S.newType);
   const vals = {};
   if (ed) (ed.details || []).forEach(d => vals[d.k] = d.value);
+  const pf = !ed && S.prefill && S.prefill.type === t.id ? S.prefill : null;
+  if (pf) Object.assign(vals, pf.vals);
   return `
   ${pageHead(ed ? '直して出し直す' : esc(t.name), ed ? '直した内容で出し直すと、最初の段から回り直します。' : '入れ終わったら「確かめる画面へ進む」を押してください。まだ出されません。')}
   ${stepBar(2)}
@@ -464,7 +698,7 @@ VIEWS.new = function () {
     <div class="wide form" id="nfFields">${(t.fields || []).map(fd => fieldInput(fd, vals[fd.k])).join('')}</div>
     <label class="f" id="nfAmountWrap"><span class="fl">金額（円）</span><input id="nfAmount" inputmode="numeric" value="${ed && ed.amount != null ? ed.amount : ''}" placeholder="例：98000"><span class="hint">お金がかからない場合は空のままで大丈夫です。</span></label>
     <label class="f wide"><span class="fl">件名<span class="req">※必須</span></span><input id="nfTitle" value="${esc(ed ? ed.title : '')}" placeholder="例：鉛筆の購入"></label>
-    <label class="f wide"><span class="fl" id="nfBodyLabel">内容</span><textarea id="nfBody" rows="4">${esc(ed ? ed.body : '')}</textarea></label>
+    <label class="f wide"><span class="fl" id="nfBodyLabel">内容</span><textarea id="nfBody" rows="4">${esc(ed ? ed.body : pf ? pf.body : '')}</textarea></label>
     <div class="f wide"><span class="fl">添付書類<span class="opt">なくても大丈夫</span></span>
       ${ed && filesOf(ed.id).length ? `<p class="hint" style="margin:0 0 6px">今の添付：${filesOf(ed.id).map(f => esc(f.name)).join('、')}（外すときは申請の画面で）</p>` : ''}
       ${!S.filesReady ? '<p class="hint" style="margin:0">添付書類は、まだ準備中です（Supabase への貼り直しが終わると使えます）。</p>' : ''}
@@ -576,7 +810,8 @@ function autoTitle(t, details) {
   if (t.use_amount) return '';
   let s = t.name.replace(/（.*?）/g, '').replace(/届$/, '');
   if (t.name.startsWith('遅刻')) s = v('kind') || '遅刻・早退';
-  if (day) s += ' ' + md(day) + (v('to') && v('to') !== day ? '〜' + md(v('to')) : '');
+  const isDay = x => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+  if (isDay(day)) s += ' ' + md(day) + (isDay(v('to')) && v('to') !== day ? '〜' + md(v('to')) : '');
   if (t.name.startsWith('時間外') && v('kind')) s += ' ' + v('kind');
   return s;
 }
@@ -951,7 +1186,7 @@ function readDraft() {
 }
 
 // ---------------------------------------------------------------- 操作
-function go(v) { if (v !== 'new' || S.view !== 'new') S.pick = []; if (v === 'new') S.step = 1; S.view = v; S.open = null; S.edit = null; S.notesOpen = false; S.titleTouched = false; S.moreOpen = false; render(); window.scrollTo({ top: 0 }); }
+function go(v) { S.prefill = null; S.teamWho = null; if (v !== 'new' || S.view !== 'new') S.pick = []; if (v === 'new') S.step = 1; S.view = v; S.open = null; S.edit = null; S.notesOpen = false; S.titleTouched = false; S.moreOpen = false; render(); window.scrollTo({ top: 0 }); }
 function openR(id) {
   S.open = +id; S.edit = null; S.notesOpen = false; S.moreOpen = false;
   if (S.notices.some(n => n.ringi_id === +id && !n.is_read)) {
@@ -968,7 +1203,7 @@ document.addEventListener('click', async e => {
     const spot = e.target.closest('[data-drop]');
     if (spot) { orgDrop(S.orgPick.person, parseSpot(S.orgPick.from), parseSpot(spot.dataset.drop)); return; }
   }
-  const t = e.target.closest('button,[data-open],[data-a],[data-nav]'); if (!t || t.disabled) return;
+  const t = e.target.closest('button,[data-open],[data-a],[data-nav],[data-who]'); if (!t || t.disabled) return;
   const d = t.dataset;
   if (t.id === 'logout') { await sb.auth.signOut(); S.me = null; loginView(); return; }
   if (t.id === 'bell') { S.notesOpen = !S.notesOpen; renderNotes(); return; }
@@ -977,10 +1212,19 @@ document.addEventListener('click', async e => {
   if (d.type) { S.newType = +d.type; S.step = 2; S.titleTouched = false; S.pick = []; render(); window.scrollTo({ top: 0 }); return; }
   if (d.ibt) { S.inboxTab = d.ibt; S.sel.clear(); render(); return; }
   if (d.filter) { S.filter = d.filter; render(); return; }
+  if (d.who) { S.teamWho = S.teamWho === d.who ? null : d.who; render(); if (S.teamWho) setTimeout(() => $('#teamWho')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); return; }
   if (d.open) { openR(d.open); return; }
   const a = d.a; const r = d.id && !['selType'].includes(a) ? R(+d.id) : null;
   if (a === 'how') { S.showHow = !S.showHow; render(); return; }
   if (a === 'noop') return;
+  if (a === 'punch') {
+    const sh = +($('#pcShift')?.value || 0) || null;
+    await rpc('punch', { p_shift: sh }, x => x && x.kind === 'out' ? `退勤しました（${hmOf(Date.parse(x.at))}）。おつかれさまでした` : `出勤しました（${hmOf(Date.parse(x.at))}）`);
+    return;
+  }
+  if (a === 'mprev' || a === 'mnext') { const ym = curMonth(); S.workMonth = addDays(`${ym}-01`, a === 'mprev' ? -1 : 32).slice(0, 7); render(); return; }
+  if (a === 'wreq') { openWorkReq(d.kind, d.day); return; }
+  if (a === 'closeWho') { S.teamWho = null; render(); return; }
   if (a === 'chgType') { S.step = 1; S.pick = []; render(); window.scrollTo({ top: 0 }); return; }
   if (a === 'toConfirm') { if (validateForm()) showConfirm(true); return; }
   if (a === 'backToEdit') { showConfirm(false); return; }
@@ -1089,6 +1333,7 @@ document.addEventListener('change', async e => {
     return;
   }
   if ($('#nf') && (e.target.id === 'nfProxy' || e.target.dataset.fd)) updateForm(false);
+  if (el.id === 'tmDept') { S.teamDept = +el.value; S.teamWho = null; render(); }
 });
 
 // ほかの人が印を押したときなどに備えて、ときどき読み直す（入力の途中は画面を描き直さない）
@@ -1100,6 +1345,9 @@ setInterval(async () => {
     if (typing) renderBell(); else render();
   } catch (_) { /* つながらないときは次の回に */ }
 }, 30000);
+
+// 打刻の時計を進める
+setInterval(() => { const c = $('#pcClock'); if (c) c.textContent = hmOf(Date.now()); }, 15000);
 
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { S.me = null; loginView(); } });
 start();

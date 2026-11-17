@@ -505,6 +505,48 @@ body.busy::after{content:"";position:fixed;left:0;top:0;height:4px;width:40%;z-i
 @keyframes busy{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
 
+
+/* ---------------------------------------------------------------- 勤怠 */
+.punch{display:flex;align-items:center;flex-wrap:wrap;gap:16px 24px;border-left:6px solid var(--key)}
+.punch .pcl{flex:1;min-width:240px;display:flex;flex-direction:column;gap:2px}
+.pct{font-size:14px;font-weight:700;color:var(--fg2)}
+.pcclock{font-size:40px;line-height:1.15;font-weight:700;letter-spacing:.02em}
+.pcs{font-size:15px}
+.pcr{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.pcshift{min-width:220px}
+.punchbtn{min-height:64px;min-width:200px;font-size:20px;border-radius:12px}
+.punchbtn .ic{width:24px;height:24px}
+.punchbtn.out{background:var(--ok-mark);border-color:var(--ok-mark)}
+.punchbtn.out:hover{background:var(--green-900)}
+.pcnote{flex-basis:100%;font-size:13px;color:var(--fg2);border-top:1px solid var(--line);padding-top:12px}
+.punch.compact .pcclock{font-size:32px}
+.punch.compact .punchbtn{min-height:56px;font-size:18px}
+
+.mnav{display:flex;align-items:center;gap:12px}
+.mnav b{font-size:16px;min-width:96px;text-align:center}
+.teamsel select{min-height:40px;padding:6px 40px 6px 14px;font-weight:700}
+.wtable{overflow-x:auto}
+.wtable th{padding:10px 12px}
+.wtable td{padding:8px 12px;font-size:15px;vertical-align:middle}
+.wtable tbody tr:last-child td{border-bottom:0}
+.w-day{white-space:nowrap;font-weight:700;width:84px}
+.w-day small{font-weight:400;font-size:12px;margin-left:2px}
+.w-day.sun{color:var(--back)}
+.w-day.sat{color:var(--key)}
+.w-sh{white-space:nowrap;width:56px}
+.w-in,.w-out,.w-hrs,.w-ot{white-space:nowrap;width:76px}
+.w-in s,.w-out s{font-size:12px;margin-right:2px}
+.miss{color:var(--back);font-weight:700}
+.w-note .tags{display:flex;flex-wrap:wrap;gap:4px 6px}
+.w-note .lbl{font-size:12px;padding:1px 6px}
+.wacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.wtable tr.fut td{color:var(--gray-420);background:#fcfcfd}
+.wtable tr.today td{background:var(--key-soft)}
+.wtable tr.todo td{background:#fffafa}
+.ttable{overflow-x:auto}
+.teamt td{font-size:15px}
+.teamt tbody tr:last-child td{border-bottom:0}
+
 /* ---------------------------------------------------------------- 中くらいの画面 */
 @media (max-width:1180px){
   .main{padding:28px 28px 80px}
@@ -549,12 +591,14 @@ body.busy::after{content:"";position:fixed;left:0;top:0;height:4px;width:40%;z-i
   #nav .nmain button[aria-current=page]{background:none;color:var(--key)}
   #nav .nmain button[aria-current=page]::before{left:20%;right:20%;top:0;bottom:auto;width:auto;height:3px;border-radius:0 0 3px 3px}
   #nav .nmain .badge{position:absolute;top:4px;left:calc(50% + 6px);min-width:18px;height:18px;font-size:11px;padding:0 5px}
-  #nav .nmain button.ncreate{order:2;margin:0;background:none;border:0;color:var(--key);font-weight:700}
+  #nav .nmain button.ncreate{margin:0;background:none;border:0;color:var(--key);font-weight:700}
   #nav .nmain button.ncreate .ic{width:36px;height:36px;padding:6px;border-radius:50%;background:var(--key);color:#fff;margin-top:-6px}
   #nav .nmain button.ncreate:hover,#nav .nmain button.ncreate[aria-current=page]{background:none;color:var(--key)}
   #nav .nmain button[data-nav=home]{order:1}
-  #nav .nmain button[data-nav=list]{order:3}
-  #nav .nmorebtn{display:flex;order:4}
+  #nav .nmain button[data-nav=list]{order:2}
+  #nav .nmain button.ncreate{order:3}
+  #nav .nmain button[data-nav=work]{order:4}
+  #nav .nmorebtn{display:flex;order:5}
   #nav .nmorebtn[aria-expanded=true]{color:var(--key)}
   .nsub{display:none;position:fixed;left:0;right:0;bottom:calc(var(--tab-h) + env(safe-area-inset-bottom,0px));max-height:70vh;overflow-y:auto;background:#fff;border-radius:16px 16px 0 0;box-shadow:var(--shadow-3);padding:12px 12px 16px}
   .nsub.open{display:flex}
@@ -652,6 +696,31 @@ body.busy::after{content:"";position:fixed;left:0;top:0;height:4px;width:40%;z-i
   .hanko{width:60px;height:60px}
   .hanko .n{font-size:13px}
 
+
+  .punch{gap:12px;border-left-width:4px}
+  .punch .pcl{min-width:0}
+  .pcclock{font-size:32px}
+  .pcr{flex-basis:100%}
+  .pcshift{flex-basis:100%;min-width:0}
+  .punchbtn{flex:1;min-width:0}
+  .mnav{gap:8px}
+  .mnav .btn{padding:0 10px}
+  .mnav b{min-width:0;font-size:15px}
+  .wtable thead{display:none}
+  .wtable table,.wtable tbody{display:block}
+  .wtable tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .wtable td{display:block;padding:0;border:0;width:auto;font-size:14px}
+  .wtable tr.fut{display:none}
+  .wtable td.w-day{min-width:64px}
+  .wtable td.w-in:not(:empty)::before{content:"出勤 ";color:var(--fg2);font-size:12px}
+  .wtable td.w-out:not(:empty)::before{content:"退勤 ";color:var(--fg2);font-size:12px}
+  .wtable td.w-hrs:not(:empty)::before{content:"働いた ";color:var(--fg2);font-size:12px}
+  .wtable td.w-ot:not(:empty)::before{content:"時間外 ";color:var(--fg2);font-size:12px}
+  .wtable td.w-note{flex-basis:100%}
+  .wtable td.w-note:has(.tags:empty):not(:has(.wacts)){display:none}
+  .teamt th:nth-child(3),.teamt th:nth-child(4),.teamt th:nth-child(5),.teamt td:nth-child(3),.teamt td:nth-child(4),.teamt td:nth-child(5){display:none}
+  .teamt th,.teamt td{padding:10px 8px}
+  .teamt .whowrap .avt{display:none}
   .notes{top:calc(var(--top-h) + 4px);left:8px;right:8px;width:auto;max-height:calc(100vh - var(--top-h) - var(--tab-h) - 16px)}
   .login{grid-template-columns:1fr;min-height:0}
   .lside{padding:28px 20px;gap:14px}
