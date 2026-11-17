@@ -4,30 +4,44 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#ffffff">
 <title>稟議・申請 お試し版</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-jp@5.3.1/400.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-jp@5.3.1/700.css">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="booting">
 <div class="strip">
   <span class="tag">お試し版</span>
-  <span class="note">流れを確かめるためのお試し版です。職員も稟議もすべて架空です。<b>本物の稟議や個人の情報は入れないでください。</b></span>
+  <span class="snote">職員も申請もすべて架空です。<b>本物の稟議や個人の情報は入れないでください。</b></span>
 </div>
 
 <header class="bar" id="bar" hidden>
-  <div class="brand"><span class="mark">稟</span><span class="logo">稟議・申請ワークフロー</span></div>
+  <div class="logo"><span class="mark">稟</span><div><b>稟議・申請</b><small>お試し版</small></div></div>
   <div class="me">
-    <button class="bell" type="button" id="bell">お知らせ</button>
+    <button class="bell" type="button" id="bell" aria-label="お知らせ" aria-expanded="false">お知らせ</button>
     <div class="nm" id="me"></div>
     <button class="out" type="button" id="logout">ログアウト</button>
   </div>
 </header>
 
-<div class="shell">
-  <nav class="nav" id="navbar" hidden aria-label="メニュー"><div id="nav"></div></nav>
-  <main class="main">
-    <section class="card notes" id="notes" hidden></section>
-    <div id="view"><p class="muted">読み込んでいます…</p></div>
-  </main>
+<div class="app">
+  <aside class="side" id="navbar" hidden>
+    <nav id="nav" aria-label="メニュー"></nav>
+  </aside>
+  <div class="content">
+    <section class="notes" id="notes" hidden aria-label="お知らせ"></section>
+    <main class="main">
+      <div id="view">
+        <div class="skel" aria-label="読み込んでいます">
+          <div class="sk sk-h"></div><div class="sk sk-s"></div>
+          <div class="sk-row"><div class="sk sk-b"></div><div class="sk sk-b"></div><div class="sk sk-b"></div></div>
+          <div class="sk sk-l"></div>
+          <p class="muted small">読み込んでいます…</p>
+        </div>
+      </div>
+    </main>
+  </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
