@@ -261,12 +261,12 @@ function rows(list, empty, opts = {}) {
   if (!list.length) return emptyArt(empty);
   const col = (k, h, cls = '') => opts[k] === false ? '' : `<th class="${cls}">${h}</th>`;
   return `<div class="dtable"><table><thead><tr>
-    ${opts.bulk ? `<th class="c-ck"><span class="vh">選ぶ</span></th>` : ''}${opts.wait ? '<th>待ち</th>' : ''}<th>件名</th><th>申請者</th><th class="r">金額</th><th>申請日</th>${opts.dec ? '<th>決裁日</th>' : ''}<th>状況</th></tr></thead><tbody>
+    ${opts.bulk ? `<th class="c-ck"><span class="vh">選ぶ</span></th>` : ''}${opts.wait ? '<th>待ち</th>' : ''}<th>申請者</th><th>件名</th><th class="r">金額</th><th>申請日</th>${opts.dec ? '<th>決裁日</th>' : ''}<th>状況</th></tr></thead><tbody>
   ${list.map(r => { const nf = filesOf(r.id).length; const wd = waitDays(r); return `<tr class="li click ${opts.bulk && S.sel.has(r.id) ? 'sel' : ''}" data-open="${r.id}" tabindex="0">
     ${opts.bulk ? `<td class="c-ck">${canBulk(r) ? `<input type="checkbox" class="bk" data-id="${r.id}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="${esc(r.title)} を選ぶ">` : `<input type="checkbox" disabled title="お金のかかる申請は、1件ずつ中身を見て承認します" aria-label="まとめて承認できません">`}</td>` : ''}
     ${opts.wait ? `<td class="c-wait num ${r.status === 'wait' && wd >= 3 ? 'late' : ''}">${r.status === 'wait' ? wd + '日' : '—'}</td>` : ''}
-    <td class="c-ttl"><span class="tlink">${esc(r.title)}</span><span class="sub">${esc(r.type_name)}${nf ? `<span class="fcount">${icon('clip')}添付 ${nf}</span>` : ''}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに申請` : ''}</span></td>
     <td class="c-who"><span class="whowrap">${avatar(r.owner_id, 'sm')}<span>${esc(P(r.owner_id).name)}<span class="sub">${esc(P(r.owner_id).dept)}</span></span></span></td>
+    <td class="c-ttl"><span class="tlink">${esc(r.title)}</span><span class="sub">${esc(r.type_name)}${nf ? `<span class="fcount">${icon('clip')}添付 ${nf}</span>` : ''}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに申請` : ''}</span></td>
     <td class="c-amt r num">${amountOf(r) || '<span class="muted">—</span>'}</td>
     <td class="c-day num"><span class="lb">申請日 </span>${fmtDay(r.created_at)}</td>
     ${opts.dec ? `<td class="c-day c-dec num">${decidedAt(r) ? `<span class="lb">決裁日 </span>${fmtDay(decidedAt(r))}` : '<span class="muted">—</span>'}</td>` : ''}
