@@ -15,7 +15,21 @@ const todayYmd = (plus = 0) => { const d = new Date(Date.now() + plus * 864e5); 
 
 let tt;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 3200); }
-const guide = h => `<div class="guide"><span class="gi">?</span><div>${h}</div></div>`;
+const ICON = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  new: '<path d="M12 5v14M5 12h14"/>',
+  wait: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  org: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/>',
+  all: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
+  admin: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
+  back: '<path d="M15 18l-6-6 6-6"/>',
+};
+const icon = (k, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ''}</svg>`;
+const guide = h => `<div class="guide">${icon('info')}<div>${h}</div></div>`;
+const pageHead = (title, sub, actions = '') => `<div class="phead"><div><h1>${title}</h1>${sub ? `<p class="psub">${sub}</p>` : ''}</div>${actions ? `<div class="pact">${actions}</div>` : ''}</div>`;
 
 // ---------------------------------------------------------------- つなぎ先
 const configured = CFG.url && /^https?:\/\//.test(CFG.url) && CFG.anonKey && !/ここに/.test(CFG.anonKey);
@@ -101,20 +115,24 @@ async function rpc(fn, args, okMsg) {
 }
 function renderBell() {
   const unread = S.notices.filter(n => !n.is_read).length;
-  $('#bell').innerHTML = `お知らせ${unread ? `<span class="badge">${unread}</span>` : ''}`;
+  $('#bell').innerHTML = `${icon('bell')}<span class="bl">お知らせ</span>${unread ? `<span class="badge">${unread}</span>` : ''}`;
 }
 
 // ---------------------------------------------------------------- ログイン
 function loginView(msg) {
   $('#bar').hidden = true; $('#navbar').hidden = true; $('#notes').hidden = true;
-  $('#view').innerHTML = `<section class="card login"><h1 style="margin-bottom:6px">ログイン</h1>
-  <p class="small muted" style="margin:0 0 14px">お試し用に配られたログイン名とパスワードを入れてください。</p>
+  document.body.classList.add('at-login');
+  $('#view').innerHTML = `<section class="login">
+  <div class="lbrand"><span class="mark">稟</span><div><b>稟議・申請ワークフロー</b><span>お試し版</span></div></div>
+  <div class="card"><h1>ログイン</h1>
+  <p class="psub">お試し用に配られたログイン名とパスワードを入れてください。</p>
   ${msg ? `<div class="errnote" style="margin-bottom:12px">${esc(msg)}</div>` : ''}
   <form id="lf">
     <label class="f">ログイン名<input id="lfUser" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="例：nakamura" required></label>
     <label class="f">パスワード<input id="lfPw" type="password" autocomplete="current-password" required></label>
-    <button class="btn primary" type="submit">ログインする</button>
-  </form></section>`;
+    <button class="btn primary lg" type="submit">ログインする</button>
+  </form></div>
+  <p class="small muted" style="text-align:center">職員も稟議もすべて架空です。</p></section>`;
 }
 async function doLogin(user, pw) {
   const u = user.trim().toLowerCase();
@@ -167,30 +185,40 @@ function previewRoute(typeId, amount, ownerId, filerId) {
 function pill(r) {
   if (r.status === 'ok') return '<span class="pill ok">決裁済み</span>';
   if (r.status === 'back') return '<span class="pill bad">差し戻し中</span>';
-  if (r.status === 'no') return '<span class="pill bad">却下</span>';
+  if (r.status === 'no') return '<span class="pill gray">却下</span>';
   const c = cur(r);
   return `<span class="pill wait">${esc(c ? c.label : '')}の確認待ち</span>`;
 }
 function rows(list, empty) {
-  if (!list.length) return `<p class="muted" style="margin:0">${empty}</p>`;
-  return `<div class="list">${list.map(r => `<div class="li click" data-open="${r.id}"><div class="main"><b>${esc(r.title)}</b>
-    <div class="sub">${no(r)}・${esc(r.type_name)}・${esc(P(r.owner_id).name)}（${esc(P(r.owner_id).dept)}）・${fmtDay(r.created_at)}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに起案` : ''}</div></div>
-    ${r.amount != null && T(r.type_id)?.use_amount ? `<span class="amt num">${yen(r.amount)}</span>` : ''}${pill(r)}</div>`).join('')}</div>`;
+  if (!list.length) return `<div class="emptybox">${empty}</div>`;
+  return `<div class="dtable"><table><thead><tr><th>番号</th><th>件名</th><th>種類</th><th>申請者</th><th class="r">金額</th><th>申請日</th><th>状況</th></tr></thead><tbody>
+  ${list.map(r => `<tr class="li click" data-open="${r.id}" tabindex="0">
+    <td class="c-no num">${no(r)}</td>
+    <td class="c-ttl"><b>${esc(r.title)}</b>${r.filer_id !== r.owner_id ? `<span class="sub">${esc(P(r.filer_id).name)}が代わりに起案</span>` : ''}</td>
+    <td class="c-type">${esc(r.type_name)}</td>
+    <td class="c-who">${esc(P(r.owner_id).name)}<span class="sub">${esc(P(r.owner_id).dept)}</span></td>
+    <td class="c-amt r num">${r.amount != null && T(r.type_id)?.use_amount ? yen(r.amount) : '<span class="muted">—</span>'}</td>
+    <td class="c-day num">${fmtDay(r.created_at)}</td>
+    <td class="c-st">${pill(r)}</td></tr>`).join('')}
+  </tbody></table></div>`;
 }
 
 const NAV = () => {
-  const n = [['home', 'ホーム'], ['new', '起案する'], ['wait', '承認待ち'], ['list', '関わった稟議'], ['org', '組織図']];
-  if (S.me.is_soumu) n.push(['all', '全体の一覧'], ['admin', '管理画面']);
+  const n = [['', 'メニュー'], ['home', 'ホーム'], ['new', '起案する'], ['wait', '承認待ち'], ['list', '関わった稟議'], ['org', '組織図']];
+  if (S.me.is_soumu) n.push(['', '総務'], ['all', '全体の一覧'], ['admin', '管理画面']);
   return n;
 };
 
 function render() {
   if (!S.me) return;
+  document.body.classList.remove('at-login');
   $('#bar').hidden = false; $('#navbar').hidden = false;
-  $('#me').innerHTML = `<b>${esc(S.me.name)}</b>${esc(S.me.dept)}・${esc(titleOf(S.me))}`;
+  $('#me').innerHTML = `<span class="av">${esc(S.me.name.slice(0, 1))}</span><span class="nmt"><b>${esc(S.me.name)}</b>${esc(S.me.dept)}・${esc(titleOf(S.me))}</span>`;
   renderBell();
   const w = waitingForMe().length;
-  $('#nav').innerHTML = NAV().map(([k, l]) => `<button type="button" data-nav="${k}" ${S.view === k && !S.open ? 'aria-current="page"' : ''}>${l}${k === 'wait' && w ? `<span class="badge">${w}</span>` : ''}</button>`).join('');
+  $('#nav').innerHTML = NAV().map(([k, l]) => k
+    ? `<button type="button" data-nav="${k}" ${S.view === k && !S.open ? 'aria-current="page"' : ''}>${icon(k)}<span>${l}</span>${k === 'wait' && w ? `<span class="badge">${w}</span>` : ''}</button>`
+    : `<div class="ngroup">${l}</div>`).join('');
   renderNotes();
   const r = S.open ? R(S.open) : null;
   $('#view').innerHTML = r ? detail(r) : (VIEWS[S.view] || VIEWS.home)();
@@ -201,7 +229,7 @@ function renderNotes() {
   const box = $('#notes'); box.hidden = !S.notesOpen;
   if (!S.notesOpen) return;
   const ns = S.notices.slice(0, 30);
-  box.innerHTML = `<div class="row between"><h2 style="margin:0">お知らせ</h2><div class="row">
+  box.innerHTML = `<div class="row between"><h2 style="margin:0">${icon('bell')} お知らせ</h2><div class="row">
     ${S.notices.some(n => !n.is_read) ? '<button class="btn sm" type="button" data-a="readAll">すべて読んだことにする</button>' : ''}
     <button class="btn sm" type="button" data-a="closeNotes">閉じる</button></div></div>
   <p class="small muted" style="margin:2px 0 6px">本番では、スマホにも同じ知らせが届くようにできます（お試し版ではこの画面だけ）。</p>
@@ -215,11 +243,17 @@ VIEWS.home = function () {
   const mine = S.ringi.filter(r => r.owner_id === S.me.id || r.filer_id === S.me.id);
   const back = mine.filter(r => r.status === 'back');
   const w = waitingForMe();
+  const tile = (n, label, sub, nav, cls) => `<button type="button" class="tile ${cls}" ${nav}><span class="tl">${label}</span><span class="tn num">${n}<small>件</small></span><span class="ts">${sub}</span></button>`;
   return `
-  ${guide(`スマホやパソコンで開く最初の画面です。<b>自分が出した稟議・申請がいまどこまで進んでいるか</b>が一目で分かります。紙のように「いま誰の机にあるか」を探す必要がなくなります。`)}
-  ${w.length ? `<section class="card"><div class="row between"><div><b>あなたの印を待っている稟議・申請が ${w.length}件 あります。</b></div><button class="btn primary" type="button" data-nav="wait">承認待ちを見る</button></div></section>` : ''}
-  ${back.map(r => `<section class="card"><div class="backnote"><b>差し戻されています：</b>${esc(r.title)}<br>${esc(P(r.last_by).name)}さんより「${esc(r.last_comment)}」</div><div class="row" style="margin-top:10px"><button class="btn primary" type="button" data-open="${r.id}">中身を見て直す</button></div></section>`).join('')}
-  <section class="card"><div class="row between" style="margin-bottom:6px"><h2 style="margin:0">自分の稟議・申請</h2><button class="btn primary" type="button" data-nav="new">＋ 起案する</button></div>
+  ${pageHead(`${esc(S.me.name)} さん、おつかれさまです`, '自分が出した稟議・申請がいまどこまで進んでいるか、ここで分かります。', `<button class="btn primary" type="button" data-nav="new">${icon('new')}起案する</button>`)}
+  <div class="tiles">
+    ${tile(w.length, '承認待ち', 'あなたの印を待っています', 'data-nav="wait"', w.length ? 'hot' : '')}
+    ${tile(back.length, '差し戻し', '直して出し直してください', back.length ? `data-open="${back[0].id}"` : 'data-nav="list"', back.length ? 'warn' : '')}
+    ${tile(mine.filter(r => r.status === 'wait').length, '申請中', '回っている途中', 'data-nav="list"', '')}
+    ${tile(mine.filter(r => r.status === 'ok').length, '決裁済み', 'すべての印がそろったもの', 'data-nav="list"', '')}
+  </div>
+  ${back.map(r => `<section class="card notice-card"><div class="backnote"><b>差し戻されています：</b>${esc(r.title)}<br>${esc(P(r.last_by).name)}さんより「${esc(r.last_comment)}」</div><div class="row" style="margin-top:10px"><button class="btn primary" type="button" data-open="${r.id}">中身を見て直す</button></div></section>`).join('')}
+  <section class="card flush"><div class="chead"><h2>自分の稟議・申請</h2><span class="muted small">${mine.length}件</span></div>
   ${rows(mine, 'まだありません。「起案する」から出してみてください。')}</section>
   ${howTo()}`;
 };
@@ -234,7 +268,7 @@ function howTo() {
     '<b>総務の青木さん</b>（<code>aoki</code>）で入り、<b>親睦会（慶弔）を中村さんの代わりに起案</b>する。<b>管理画面</b>で回る順番や金額の条件を変えてみる',
     '<b>総務の青木さん</b>で「組織図」を開き、<b>3階東病棟の井上師長のカードを、1階病棟の看護師長の席へ動かす</b>（2人が入れ替わる）。確定の前に、担当が変わる稟議の一覧を見る。1階病棟の清水さんの「点滴スタンドの購入」が、斎藤師長から井上師長に移るのを見る（<code>inoue</code> で入ると承認待ちに出る）',
   ];
-  return `<section class="card"><div class="row between"><h2 style="margin:0">試し方の例（15分ほど）</h2><button class="btn sm" type="button" data-a="how">${S.showHow ? '閉じる' : '開く'}</button></div>
+  return `<section class="card"><div class="row between"><h2 style="margin:0">お試しの進め方（15分ほど）</h2><button class="btn sm" type="button" data-a="how">${S.showHow ? '閉じる' : '開く'}</button></div>
   ${S.showHow ? `<ol class="steps" style="margin-top:12px">${steps.map(s => `<li><div>${s}</div></li>`).join('')}</ol>
   <p class="small muted" style="margin:12px 0 0">人を変えるときは、右上の「ログアウト」から入り直します。何人かで同じ人に入っても大丈夫です。</p>` : ''}</section>`;
 }
@@ -242,14 +276,14 @@ function howTo() {
 VIEWS.list = function () {
   const id = S.me.id;
   const list = S.ringi.filter(r => r.owner_id === id || r.filer_id === id || routeOf(r.id).some(x => x.approver_ids.includes(id) || x.stamped_by === id));
-  return `${guide('自分が出したものと、自分が印を押す順番に入っているものの一覧です。押すと承認印の様子と、やり取りの記録が見られます。')}
-  <section class="card"><h2>関わった稟議・申請</h2>${rows(list, 'まだありません。')}</section>`;
+  return `${pageHead('関わった稟議', '自分が出したものと、自分が印を押す順番に入っているものです。行を押すと中身を見られます。')}
+  <section class="card flush"><div class="chead"><h2>一覧</h2><span class="muted small">${list.length}件</span></div>${rows(list, 'まだありません。')}</section>`;
 };
 
 VIEWS.wait = function () {
   const list = waitingForMe();
-  return `${guide('あなたの印を待っているものだけが並びます。<b>同じ段に何人かいるときは、どなたか1人</b>が押せば次へ進みます（例：師長か副師長のどちらか）。')}
-  <section class="card"><h2>${esc(S.me.name)} さんの承認待ち（${list.length}件）</h2>${rows(list, 'いま承認待ちはありません。')}</section>`;
+  return `${pageHead('承認待ち', '同じ段に何人かいるときは、どなたか1人が押せば次へ進みます（例：師長か副師長のどちらか）。')}
+  <section class="card flush"><div class="chead"><h2>${esc(S.me.name)} さんの承認待ち</h2><span class="muted small">${list.length}件</span></div>${rows(list, 'いま承認待ちはありません。')}</section>`;
 };
 
 VIEWS.all = function () {
@@ -257,13 +291,12 @@ VIEWS.all = function () {
   const f = S.filter;
   const match = (r, k) => k === 'all' || (k === 'wait' && r.status === 'wait') || (k === 'ok' && r.status === 'ok') || (k === 'back' && (r.status === 'back' || r.status === 'no'));
   const list = S.ringi.filter(r => match(r, f));
-  return `${guide('総務は<b>病院全体の稟議・申請</b>を見られます。どこで止まっているかが分かるので、催促や台帳づくりの手間が減ります。')}
-  <section class="card"><div class="row between" style="margin-bottom:8px"><h2 style="margin:0">全体の一覧</h2>
-  <div class="filters">${[['all', 'すべて'], ['wait', '回っている途中'], ['ok', '決裁済み'], ['back', '差し戻し・却下']].map(([k, l]) => `<button type="button" data-filter="${k}" aria-pressed="${f === k}">${l}（${S.ringi.filter(r => match(r, k)).length}）</button>`).join('')}</div></div>
+  return `${pageHead('全体の一覧', '病院全体の稟議・申請です。どこで止まっているかが分かるので、催促や台帳づくりの手間が減ります。')}
+  <section class="card flush"><div class="chead">
+  <div class="filters" role="group" aria-label="絞り込み">${[['all', 'すべて'], ['wait', '回っている途中'], ['ok', '決裁済み'], ['back', '差し戻し・却下']].map(([k, l]) => `<button type="button" data-filter="${k}" aria-pressed="${f === k}">${l}<span class="fc">${S.ringi.filter(r => match(r, k)).length}</span></button>`).join('')}</div></div>
   ${rows(list, '当てはまるものはありません。')}</section>`;
 };
 
-// ---- 起案・出し直し
 function fieldInput(fd, val) {
   const id = `fd_${fd.k}`;
   const req = fd.required ? '<span class="req">必須</span>' : '';
@@ -286,7 +319,8 @@ VIEWS.new = function () {
   return `
   ${guide(ed ? '差し戻されたものを直して、もう一度出せます。出し直すと、<b>最初の段から回り直します</b>。'
     : '種類を選ぶと、入れる項目と<b>回る順番</b>がすぐ下に出ます。物品購入で金額を10万円より下げてみてください。院長の段が外れます。')}
-  <section class="card"><h1 style="margin-bottom:12px">${ed ? '直して出し直す' : '起案する'}</h1>
+  ${pageHead(ed ? '直して出し直す' : '起案する', ed ? '直した内容で出し直すと、最初の段から回り直します。' : '種類を選ぶと、入れる項目と回る順番が出ます。')}
+  <section class="card">
   <form class="form" id="nf" novalidate>
     <label class="f">種類<select id="nfType" ${ed ? 'disabled' : ''}>${types.map(x => `<option value="${x.id}" ${x.id === defType ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select><span class="hint" id="nfDesc"></span></label>
     <label class="f" id="nfAmountWrap">金額（円）<input id="nfAmount" inputmode="numeric" value="${ed && ed.amount != null ? ed.amount : ''}" placeholder="例：98000"><span class="hint">お金がかからない場合は空のままで大丈夫です。</span></label>
@@ -371,12 +405,12 @@ function detail(r) {
   const t = T(r.type_id);
   let action = '';
   if (mine) {
-    action = `<section class="card"><h2>あなたの番です（${esc(c.label)}として）</h2>
+    action = `<section class="card actcard"><h2>あなたの番です（${esc(c.label)}として）</h2>
     ${c.approver_ids.length > 1 ? `<p class="small muted" style="margin:-4px 0 8px">この段は ${esc(names(c.approver_ids))} のどなたか1人が承認すると次へ進みます。</p>` : ''}
     <label class="f">コメント<span class="hint">承認のときはなくても大丈夫です。差し戻し・却下のときは理由を書いてください。</span><textarea id="cm" rows="2" placeholder="例：見積りを2社分そろえてください"></textarea></label>
-    <div class="row" style="margin-top:10px"><button class="btn ok" type="button" data-a="approve" data-id="${r.id}">承認する</button><button class="btn warn" type="button" data-a="back" data-id="${r.id}">差し戻す（直して出し直してもらう）</button><button class="btn bad" type="button" data-a="reject" data-id="${r.id}">却下する</button></div></section>`;
+    <div class="row" style="margin-top:12px"><button class="btn ok" type="button" data-a="approve" data-id="${r.id}">承認する</button><button class="btn warn" type="button" data-a="back" data-id="${r.id}">差し戻す（直して出し直してもらう）</button><button class="btn bad" type="button" data-a="reject" data-id="${r.id}">却下する</button></div></section>`;
   } else if (c) {
-    action = `<section class="card"><p style="margin:0">いまは<b>${esc(c.label)}</b>（${esc(names(c.approver_ids))}）の番です。${route.some(x => x.approver_ids.includes(S.me.id) && x.step_no > r.stage) ? 'あなたの番はこのあとです。' : ''}</p></section>`;
+    action = `<section class="card infocard"><p style="margin:0">いまは<b>${esc(c.label)}</b>（${esc(names(c.approver_ids))}）の番です。${route.some(x => x.approver_ids.includes(S.me.id) && x.step_no > r.stage) ? 'あなたの番はこのあとです。' : ''}</p></section>`;
   } else if (r.status === 'back' && isOwner) {
     action = `<section class="card"><div class="backnote"><b>${esc(P(r.last_by).name)}さんから差し戻されました。</b><br>「${esc(r.last_comment)}」</div><div class="row" style="margin-top:10px"><button class="btn primary" type="button" data-a="edit" data-id="${r.id}">直して出し直す</button></div></section>`;
   } else if (r.status === 'back') {
@@ -385,24 +419,46 @@ function detail(r) {
     action = `<section class="card"><div class="errnote">${esc(P(r.last_by).name)}さんが却下しました。<br>理由：「${esc(r.last_comment)}」</div></section>`;
   }
   const details = r.details || [];
+  const owner = P(r.owner_id), filer = P(r.filer_id);
+  const kv = [
+    ['申請番号', `<span class="num">${no(r)}</span>`],
+    ['種類', esc(r.type_name)],
+    ['申請者', `${esc(owner.name)}<span class="muted">（${esc(owner.dept)}）</span>${r.filer_id !== r.owner_id ? `<span class="sub">${esc(filer.name)}（${esc(filer.dept)}）が代わりに起案</span>` : ''}`],
+    ['申請日時', `<span class="num">${fmtAt(r.created_at)}</span>`],
+    ...(r.amount != null && t?.use_amount ? [['金額', `<b class="num amtbig">${yen(r.amount)}</b>`]] : []),
+    ...details.map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    ...(r.body ? [[esc(t?.body_label || '内容'), `<span class="pre">${esc(r.body)}</span>`]] : []),
+  ];
+  // 承認の流れ（起案 → 各段）
+  const stateOf = i => route[i].stamped_by ? 'done' : (c && i === r.stage) ? 'now' : ((r.status === 'back' || r.status === 'no') && i === r.stage) ? 'stop' : 'todo';
+  const stepper = `<ol class="stepper">
+    <li class="done"><span class="sd">✓</span><div><div class="sl2">起案</div><div class="sn2">${esc(owner.name)}</div><div class="st2 num">${fmtAt(r.created_at)}</div></div></li>
+    ${route.map((s, i) => { const st = stateOf(i); return `<li class="${st}"><span class="sd">${st === 'done' ? '✓' : st === 'stop' ? '!' : i + 1}</span><div>
+      <div class="sl2">${esc(s.label)}${st === 'now' ? '<span class="tag now">いまの番</span>' : st === 'stop' ? `<span class="tag stop">${r.status === 'back' ? '差し戻し' : '却下'}</span>` : ''}</div>
+      <div class="sn2">${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<span class="muted small">（どなたか1人）</span>' : ''}</div>
+      ${s.stamped_by ? `<div class="st2"><span class="num">${fmtAt(s.stamped_at)}</span> ${esc(P(s.stamped_by).name)} が承認</div>` : ''}</div></li>`; }).join('')}
+    ${route.length ? `<li class="${r.status === 'ok' ? 'done' : 'todo'} last"><span class="sd">${r.status === 'ok' ? '✓' : '◎'}</span><div><div class="sl2">決裁</div></div></li>` : ''}
+  </ol>`;
   return `
-  <div><button class="btn link" type="button" data-a="back2list">← 戻る</button></div>
-  ${guide(r.status === 'ok' ? 'すべての印がそろい、決裁が終わったものです。<b>やり取りの記録</b>に、誰がいつ押したかが残ります。' : c ? '紙の稟議書と同じ承認欄です。印が押されると、次の人に<b>自動でお知らせが届きます</b>。' : '差し戻されたものは、起案した人が直して出し直すと<b>最初の段から回り直します</b>。')}
-  <section class="card">
-    <div class="row between"><h1>${esc(r.title)}</h1>${pill(r)}</div>
-    <div class="small muted" style="margin-top:4px">${no(r)}・${esc(r.type_name)}・起案 ${esc(P(r.owner_id).name)}（${esc(P(r.owner_id).dept)}）・${fmtAt(r.created_at)}${r.filer_id !== r.owner_id ? `<br>${esc(P(r.filer_id).name)}（${esc(P(r.filer_id).dept)}${P(r.filer_id).post_title ? '・' + esc(P(r.filer_id).post_title) : ''}）が代わりに起案` : ''}</div>
-    ${r.amount != null && t?.use_amount ? `<div style="font-size:22px;font-weight:700;margin:8px 0" class="num">${yen(r.amount)}</div>` : '<div style="height:8px"></div>'}
-    ${details.length ? `<dl class="kv">${details.map(d => `<dt>${esc(d.label)}</dt><dd>${esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)}</dd>`).join('')}</dl>` : ''}
-    ${r.body ? `<p style="margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.body)}</p>` : ''}
-  </section>
-  <section class="card"><h2>承認欄</h2>
-    ${route.length ? `<div class="stamps">${route.map((s, i) => `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko"><span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '承認待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}</div></div>`).join('')}</div>` : '<p class="muted" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
-  </section>
-  ${action}
-  <section class="card"><h2>やり取りの記録</h2><div class="timeline">
-    ${logOf(r.id).map(l => `<div><span class="muted num">${fmtAt(l.at)}</span>　${esc(l.text)}${l.comment ? `<br><span class="c">「${esc(l.comment)}」</span>` : ''}</div>`).join('')}
-    ${c ? `<div class="muted">${esc(c.label)}の確認待ち（${esc(names(c.approver_ids))}）</div>` : ''}
-  </div></section>`;
+  <div class="crumb"><button class="btn link" type="button" data-a="back2list">${icon('back')}一覧へ戻る</button></div>
+  <div class="dhead"><div><div class="dmeta"><span class="num">${no(r)}</span>・${esc(r.type_name)}</div><h1>${esc(r.title)}</h1></div>${pill(r)}</div>
+  <div class="dgrid">
+    <div class="dmain">
+      <section class="card flush"><div class="chead"><h2>申請内容</h2></div>
+        <table class="kvt">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
+      ${action}
+      <section class="card"><h2>承認欄</h2>
+        ${route.length ? `<div class="stamps">${route.map((s, i) => `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko"><span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '承認待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}</div></div>`).join('')}</div>` : '<p class="muted" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
+      </section>
+    </div>
+    <aside class="dside">
+      <section class="card"><h2>承認の流れ</h2>${stepper}</section>
+      <section class="card"><h2>やり取りの記録</h2><div class="timeline">
+        ${logOf(r.id).map(l => `<div><span class="muted num small">${fmtAt(l.at)}</span><br>${esc(l.text)}${l.comment ? `<br><span class="c">「${esc(l.comment)}」</span>` : ''}</div>`).join('')}
+        ${c ? `<div class="muted">${esc(c.label)}の確認待ち（${esc(names(c.approver_ids))}）</div>` : ''}
+      </div></section>
+    </aside>
+  </div>`;
 }
 
 // ---- 組織図（カードを動かす看板の形）
@@ -484,6 +540,7 @@ VIEWS.org = function () {
   const pv = S.orgPreview;
   const warns = orgWarnings(sim);
   return `
+  ${pageHead('組織図', edit ? '職員のカードを動かして、席や所属を変えられます。' : '稟議・申請の「所属長」は、ここで決まった席に座っている人へ回ります。')}
   ${guide(edit
     ? '職員のカードを<b>マウスや指で動かして</b>、席に置いたり、ほかの部署へ移したりできます（カードを押して選び、置きたい所を押す動かし方もできます）。動かしただけではまだ決まりません。下に出る<b>「確定すると変わること」</b>を見てから「確定する」を押してください。'
     : '病院の組織図です。稟議・申請の「所属長」は、ここで決まった席に座っている人へ回ります。所属長がいないときは、一つ上の部署の長へ回ります。')}
@@ -564,6 +621,7 @@ VIEWS.admin = function () {
   if (!S.me.is_soumu) return VIEWS.home();
   const routeTxt = t => stepsOf(t.id).map(s => s.label + (s.min_amount != null ? `（${yen(s.min_amount)}以上）` : '')).join(' → ');
   return `
+  ${pageHead('管理画面', '稟議・申請の種類と、回る順番を決めます。')}
   ${guide('<b>種類ごとに、回る順番を総務が自分で変えられる</b>画面です。規程が変わったときも、業者に頼まずにここで直せます。直した内容は<b>これから出すものから</b>使われ、回っている途中のものは変わりません。')}
   <section class="card"><div class="row between" style="margin-bottom:6px"><h2 style="margin:0">種類と回る順番</h2><button class="btn sm" type="button" data-a="addType">＋ 種類を足す</button></div>
   <div class="tblwrap"><table class="plain"><thead><tr><th>種類の名前</th><th>回る順番</th><th>代わりに起案</th><th>使う</th></tr></thead><tbody>
