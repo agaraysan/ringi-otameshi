@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>稟議・申請 お試し版</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="strip"><div class="wrap">
+  <span class="tag">お試し版</span>
+  <span class="note">流れを確かめるためのお試し版です。職員も稟議もすべて架空です。<b>本物の稟議や個人の情報は入れないでください。</b></span>
+</div></div>
+
+<header class="bar" id="bar" hidden><div class="wrap">
+  <span class="logo">稟議・申請</span>
+  <div class="me">
+    <button class="bell" type="button" id="bell">お知らせ</button>
+    <div class="nm" id="me"></div>
+    <button class="out" type="button" id="logout">ログアウト</button>
+  </div>
+</div></header>
+
+<nav class="nav" id="navbar" hidden><div class="wrap" id="nav"></div></nav>
+
+<main class="wrap">
+  <section class="card" id="notes" hidden></section>
+  <div id="view"><p class="muted">読み込んでいます…</p></div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.100.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
