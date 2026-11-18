@@ -124,7 +124,9 @@ const proxyTargets = () => S.staff.filter(s => s.id !== S.me.id && (S.me.is_soum
 
 async function loadAll() {
   const tables = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work'];
-  const res = await Promise.all(tables.map(t => sb.from(t).select('*')));
+  // 一度に12本まとめて頼むと、無料枠のサーバーの受け口（同時に使える数が少ない）があふれるので、3本ずつ順に読む
+  const res = [];
+  for (let i = 0; i < tables.length; i += 3) res.push(...await Promise.all(tables.slice(i, i + 3).map(t => sb.from(t).select('*'))));
   // 添付の表は、Supabase に貼り直すまではまだない。そのときも残りは使えるようにする。
   S.filesReady = !res[9].error;
   if (!S.filesReady) res[9] = { data: [] };
