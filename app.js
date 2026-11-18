@@ -48,6 +48,11 @@ const ICON = {
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   stamp: '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
+  swap: '<path d="M7 4L3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 4 4"/><path d="M17 20l4-4-4-4"/><path d="M21 16H8a4 4 0 0 1-4-4"/>',
+  print: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>',
+  copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  down: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/>',
 };
 const AV_COLORS = ['#2f6fdf', '#0f8a7e', '#b4541a', '#7a4fc9', '#c23b6b', '#2f7d32', '#a2700b', '#33658a'];
 function avatar(id, cls = '') {
@@ -89,7 +94,7 @@ const sb = window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistS
 const S = {
   me: null, view: 'home', open: null, edit: null, filter: 'all', notesOpen: false,
   adminSel: null, draft: null, showHow: false, busy: false, titleTouched: false,
-  staff: [], types: [], shifts: [], work: [], workMonth: null, teamDept: null, teamWho: null, prefill: null, steps: [], ringi: [], route: [], log: [], notices: [], depts: [], posts: [],
+  staff: [], types: [], shifts: [], work: [], away: [], leave: [], budgets: [], qs: {}, budgetEdit: null, workMonth: null, teamDept: null, teamWho: null, prefill: null, steps: [], ringi: [], route: [], log: [], notices: [], depts: [], posts: [],
   orgDraft: [], orgPreview: null, orgPick: null,
   files: [], pick: [], listFilter: 'wait', moreOpen: false, soumuOpen: true,
   step: 1, sel: new Set(), inboxTab: 'all',
@@ -107,7 +112,13 @@ const routeOf = rid => S.route.filter(x => x.ringi_id === rid).sort((a, b) => a.
 const logOf = rid => S.log.filter(x => x.ringi_id === rid).sort((a, b) => a.id - b.id);
 const R = id => S.ringi.find(r => r.id === id);
 const cur = r => r.status === 'wait' ? routeOf(r.id)[r.stage] : null;
-const myTurn = r => { const c = cur(r); return !!c && c.approver_ids.includes(S.me.id); };
+// 留守：今日、留守が入っている人。代わりの人は、その人の番の申請を承認・差し戻しできる（本人の申請を除く）。
+const todayAway = () => { const d = todayYmd(); return S.away.filter(a => a.from_d <= d && d <= a.to_d); };
+const awayOf = id => todayAway().find(a => a.staff_id === id);
+const proxyFor = r => { const c = cur(r); if (!c || c.approver_ids.includes(S.me.id) || isMine(r)) return null;
+  const a = todayAway().find(x => x.deputy_id === S.me.id && c.approver_ids.includes(x.staff_id)); return a ? a.staff_id : null; };
+const myTurn = r => { const c = cur(r); return !!c && (c.approver_ids.includes(S.me.id) || !!proxyFor(r)); };
+const awayNote = ids => ids.map(awayOf).filter(Boolean).map(a => `${P(a.staff_id).name}さんは${md(a.to_d)}まで留守（代わり：${P(a.deputy_id).name}さん）`).join('。');
 const waitingForMe = () => S.ringi.filter(myTurn);
 const names = ids => ids.map(i => P(i).name).join('・');
 const sanNames = ids => ids.map(i => P(i).name + 'さん').join('・');
@@ -115,30 +126,90 @@ const filesOf = rid => S.files.filter(f => f.ringi_id === rid).sort((a, b) => a.
 const stampedAny = r => routeOf(r.id).some(x => x.stamped_by);
 const isMine = r => r.owner_id === S.me.id || r.filer_id === S.me.id;
 const canChangeFiles = r => isMine(r) && (r.status === 'back' || (r.status === 'wait' && !stampedAny(r)));
-const canSeeFiles = r => isMine(r) || S.me.is_soumu || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id);
+const canSeeFiles = r => isMine(r) || S.me.is_soumu || !!proxyFor(r) || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id);
 const decidedAt = r => r.status === 'ok' ? r.updated_at : null;
 const no = r => 'R-' + String(r.id).padStart(4, '0');
 const canProxy = () => S.me.is_soumu || S.me.is_boss;
 const myBossDepts = () => S.posts.filter(p => p.holder_id === S.me.id && p.is_boss).map(p => p.dept_id);
+// ---- 有給の残り（今年度に付いた日数＋繰り越し−前に使った日数−決裁された有給。データの側と同じ数え方）
+const num = x => Number(x || 0);
+const dtxt = n => (Math.round(n * 1000) / 1000).toString();
+function leaveDays(details) {
+  const v = k => ((details || []).find(d => d.k === k) || {}).value || '';
+  const f = v('from'); if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) return 0;
+  let t = v('to'); if (!/^\d{4}-\d{2}-\d{2}$/.test(t) || t < f) t = f;
+  const n = Math.round((atOf(t, '12:00') - atOf(f, '12:00')) / DAY) + 1;
+  const how = v('how') || '1日';
+  if (/半日$/.test(how)) return 0.5 * n;
+  if (how === '時間単位') {
+    const h = v('hours').replace(/[０-９：]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    const m = /(\d{1,2}):(\d{2})\D+(\d{1,2}):(\d{2})/.exec(h); if (!m) return 0;
+    return Math.max(0, Math.round(((+m[3] * 60 + +m[4]) - (+m[1] * 60 + +m[2])) / 60 / 8 * 1000) / 1000);
+  }
+  return n;
+}
+function leaveStat(sid, skipId) {
+  const g = S.leave.find(x => x.staff_id === sid); if (!g) return null;
+  const inP = r => { const f = dval(r, 'from'); return f >= g.from_d && f <= g.to_d; };
+  const rs = S.ringi.filter(r => r.owner_id === sid && r.type_name.startsWith('有給') && r.id !== skipId && inP(r));
+  const sum = st => rs.filter(r => r.status === st).reduce((a, r) => a + leaveDays(r.details), 0);
+  const used = sum('ok'), wait = sum('wait');
+  const total = num(g.granted) + num(g.carried), taken = num(g.taken_prior) + used;
+  return { g, total, granted: num(g.granted), carried: num(g.carried), prior: num(g.taken_prior), used, wait, taken, left: total - taken, after: total - taken - wait };
+}
+
+// ---- 部署の予算（年度は4月はじまり。使った額は、決裁された「お金・購入」の申請の金額）
+const fyOf = ymd => +ymd.slice(5, 7) >= 4 ? +ymd.slice(0, 4) : +ymd.slice(0, 4) - 1;
+const curFy = () => fyOf(todayYmd());
+const isMoney = r => T(r.type_id)?.grp === 'お金・購入' && r.amount != null;
+function budgetStat(deptId, skipId) {
+  const fy = curFy();
+  const b = S.budgets.find(x => x.dept_id === deptId && x.fy === fy);
+  const rs = S.ringi.filter(r => r.dept_id === deptId && isMoney(r) && r.id !== skipId && fyOf(ymdOf(Date.parse(r.created_at))) === fy);
+  const sum = st => rs.filter(r => r.status === st).reduce((a, r) => a + num(r.amount), 0);
+  const used = sum('ok'), wait = sum('wait');
+  if (!b) return { none: true, used, wait };
+  const amount = num(b.amount);
+  return { amount, used, wait, left: amount - used, after: amount - used - wait };
+}
+const fyLabel = () => `${curFy()}年度`;
+const bar = (used, wait, total) => { const pc = x => total > 0 ? Math.min(100, Math.max(0, x / total * 100)) : 0; const u = pc(used), w = Math.min(100 - u, pc(wait));
+  return `<span class="bbar ${used + wait > total ? 'over' : ''}" aria-hidden="true"><i class="u" style="width:${u}%"></i><i class="w" style="width:${w}%"></i></span>`; };
+
 const proxyTargets = () => S.staff.filter(s => s.id !== S.me.id && (S.me.is_soumu || deptChain(s.dept_id).some(d => myBossDepts().includes(d))));
 
+const TABLES = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work', 'away', 'leave_grant', 'budgets'];
+// 画面に要るものを読む。ふだんは「まとめて読む」手続き（load_all）で1回だけたのむ。
+// Supabase に貼り直す前（手続きがまだない）ときだけ、表を3本ずつ順に読む（無料枠のサーバーの受け口があふれないように）。
 async function loadAll() {
-  const tables = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work'];
-  // 一度に12本まとめて頼むと、無料枠のサーバーの受け口（同時に使える数が少ない）があふれるので、3本ずつ順に読む
-  const res = [];
-  for (let i = 0; i < tables.length; i += 3) res.push(...await Promise.all(tables.slice(i, i + 3).map(t => sb.from(t).select('*'))));
-  // 添付の表は、Supabase に貼り直すまではまだない。そのときも残りは使えるようにする。
-  S.filesReady = !res[9].error;
-  if (!S.filesReady) res[9] = { data: [] };
-  // 勤怠の表も、貼り直すまではない
-  S.workReady = !res[10].error && !res[11].error;
-  if (!S.workReady) { res[10] = { data: [] }; res[11] = { data: [] }; }
-  const bad = res.map((r, i) => r.error ? `${tables[i]}：${r.error.code || r.error.status || ''} ${r.error.message || ''}` : null).filter(Boolean);
-  if (bad.length) throw new Error(bad.join(' ／ '));
-  [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work] = res.map(r => r.data || []);
+  let data = null;
+  if (S.oneLoad !== false) {
+    const r = await sb.rpc('load_all');
+    if (!r.error) { data = r.data; S.oneLoad = true; }
+    else if (['PGRST202', '42883'].includes(r.error.code) || r.status === 404) S.oneLoad = false;
+    else throw new Error(`load_all：${r.error.code || r.status || ''} ${r.error.message || ''}`);
+  }
+  if (data) {
+    S.filesReady = S.workReady = S.extraReady = true;
+  } else {
+    const res = [];
+    for (let i = 0; i < TABLES.length; i += 3) res.push(...await Promise.all(TABLES.slice(i, i + 3).map(t => sb.from(t).select('*'))));
+    const ix = t => TABLES.indexOf(t);
+    const soft = (...ts) => { const ok = ts.every(t => !res[ix(t)].error); if (!ok) ts.forEach(t => res[ix(t)] = { data: [] }); return ok; };
+    // 添付・勤怠・便利な機能の表は、Supabase に貼り直すまではまだない。そのときも残りは使えるようにする。
+    S.filesReady = soft('ringi_files');
+    S.workReady = soft('shifts', 'work');
+    S.extraReady = soft('away', 'leave_grant', 'budgets');
+    const bad = res.map((r, i) => r.error ? `${TABLES[i]}：${r.error.code || r.error.status || ''} ${r.error.message || ''}` : null).filter(Boolean);
+    if (bad.length) throw new Error(bad.join(' ／ '));
+    data = Object.fromEntries(TABLES.map((t, i) => [t, res[i].data || []]));
+  }
+  const g = t => data[t] || [];
+  [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work, S.away, S.leave, S.budgets] = TABLES.map(g);
   S.shifts.sort((a, b) => a.sort - b.sort);
   S.depts.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.posts.sort((a, b) => a.sort - b.sort || a.id - b.id);
+  S.away.sort((a, b) => a.from_d.localeCompare(b.from_d) || a.id - b.id);
   const D = Object.fromEntries(S.depts.map(d => [d.id, d]));
   S.staff.forEach(s => {
     s.dept = D[s.dept_id]?.name || '';
@@ -221,6 +292,8 @@ async function doLogin(user, pw) {
 async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) { loginView(); return; }
+  // 3日以上止まっている申請の催促（1日1回まで。データの側で数える）。まだ貼り直していないときは何もしない。
+  try { await sb.rpc('remind_stuck'); } catch (_) {}
   try { await loadAll(); } catch (e) { loginView(`データを読み込めませんでした。次の文をそのまま教えてください。【${e?.message || e}】`); return; }
   S.me = S.staff.find(s => s.id === data.session.user.id);
   if (!S.me) { await sb.auth.signOut(); loginView('この人は職員として登録されていません。'); return; }
@@ -269,8 +342,8 @@ function pill(r) {
 }
 const DAY = 864e5;
 const waitDays = r => Math.max(0, Math.floor((Date.now() - new Date(r.updated_at).getTime()) / DAY));
-const isApprover = () => S.me.is_soumu || S.posts.some(p => p.holder_id === S.me.id) || S.route.some(x => x.approver_ids.includes(S.me.id));
-const curText = r => { const c = cur(r); return c ? `いま ${sanNames(c.approver_ids)}の決裁待ち（${waitDays(r)}日）` : ''; };
+const isApprover = () => S.me.is_soumu || S.posts.some(p => p.holder_id === S.me.id) || S.route.some(x => x.approver_ids.includes(S.me.id)) || todayAway().some(a => a.deputy_id === S.me.id);
+const curText = r => { const c = cur(r); return c ? `いま ${sanNames(c.approver_ids)}の決裁待ち（${waitDays(r)}日）${awayNote(c.approver_ids) ? '。' + awayNote(c.approver_ids) : ''}` : ''; };
 const amountOf = r => r.amount != null && T(r.type_id)?.use_amount ? yen(r.amount) : '';
 const canBulk = r => myTurn(r) && !T(r.type_id)?.use_amount;
 
@@ -284,7 +357,7 @@ function rows(list, empty, opts = {}) {
     ${opts.bulk ? `<td class="c-ck">${canBulk(r) ? `<input type="checkbox" class="bk" data-id="${r.id}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="${esc(r.title)} を選ぶ">` : `<input type="checkbox" disabled title="お金のかかる申請は、1件ずつ中身を見て承認します" aria-label="まとめて承認できません">`}</td>` : ''}
     ${opts.wait ? `<td class="c-wait num ${r.status === 'wait' && wd >= 3 ? 'late' : ''}">${r.status === 'wait' ? wd + '日' : '—'}</td>` : ''}
     <td class="c-who"><span class="whowrap">${avatar(r.owner_id, 'sm')}<span>${esc(P(r.owner_id).name)}<span class="sub">${esc(P(r.owner_id).dept)}</span></span></span></td>
-    <td class="c-ttl"><span class="tlink">${esc(r.title)}</span><span class="sub">${esc(r.type_name)}${nf ? `<span class="fcount">${icon('clip')}添付 ${nf}</span>` : ''}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに申請` : ''}</span></td>
+    <td class="c-ttl"><span class="tlink">${esc(r.title)}</span><span class="sub">${esc(r.type_name)}${nf ? `<span class="fcount">${icon('clip')}添付 ${nf}</span>` : ''}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに申請` : ''}${opts.wait && proxyFor(r) ? `<span class="lbl info sm">${esc(P(proxyFor(r)).name)}さんの代わり</span>` : ''}</span></td>
     <td class="c-amt r num">${amountOf(r) || '<span class="muted">—</span>'}</td>
     <td class="c-day num"><span class="lb">申請日 </span>${fmtDay(r.created_at)}</td>
     ${opts.dec ? `<td class="c-day c-dec num">${decidedAt(r) ? `<span class="lb">決裁日 </span>${fmtDay(decidedAt(r))}` : '<span class="muted">—</span>'}</td>` : ''}
@@ -292,7 +365,7 @@ function rows(list, empty, opts = {}) {
   </tbody></table></div>`;
 }
 const tabs = (items, curK, attr) => `<div class="tabs" role="tablist">${items.map(([k, l, n]) => `<button type="button" role="tab" ${attr}="${k}" aria-selected="${curK === k}">${l}${n != null ? `<span class="tc num">${n}</span>` : ''}</button>`).join('')}</div>`;
-const summary = items => `<div class="sums">${items.map(([ic, cls, label, n, nav, unit = '件']) => `<button type="button" class="sumc" ${nav}><span class="si ${cls}">${icon(ic)}</span><span><span class="sl">${label}</span><span class="sv num">${typeof n === 'string' ? n : `${n}<small>${unit}</small>`}</span></span></button>`).join('')}</div>`;
+const summary = items => `<div class="sums">${items.map(([ic, cls, label, n, nav, unit = '件']) => `<button type="button" class="sumc" ${nav}><span class="si ${cls}">${icon(ic)}</span><span><span class="sl">${label}</span><span class="sv num ${typeof n === 'string' && n.length > 9 ? 'long' : ''}">${typeof n === 'string' ? n : `${n}<small>${unit}</small>`}</span></span></button>`).join('')}</div>`;
 
 // メニュー。パソコンでは左に縦に、スマホでは下のタブ（よく使うもの）＋「その他」。
 function navHtml() {
@@ -311,7 +384,9 @@ function navHtml() {
   </div>`;
   const sub = `<div class="nsub ${S.moreOpen ? 'open' : ''}">
     ${ap ? b('done', '決裁した履歴', 'hist') : ''}
+    ${S.extraReady && (ap || S.me.is_soumu) ? b('away', '留守の代わり', 'swap', todayAway().some(a => a.deputy_id === S.me.id) ? '<span class="badge info" title="代わりをしています">代</span>' : '') : ''}
     ${S.workReady && canTeam() ? b('team', '部署の勤務', 'cal') : ''}
+    ${S.extraReady && (S.me.is_soumu || S.me.is_boss) ? b('budget', '部署の予算', 'yen') : ''}
     ${b('org', '組織図', 'org')}
     ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}` : ''}
     <div class="ngroup">使い方</div>${b('howto', 'お試しの進め方', 'info')}
@@ -368,8 +443,12 @@ function inbox(withMinis) {
   const myPost = S.posts.filter(p => p.holder_id === S.me.id).map(postLabel).join('・') || `${S.me.dept}`;
   const mine = S.ringi.filter(isMine).slice(0, 3);
   const stuck = S.me.is_soumu ? S.ringi.filter(r => r.status === 'wait' && waitDays(r) >= 3) : [];
+  const covering = todayAway().filter(a => a.deputy_id === S.me.id);
+  const myAway = S.away.filter(a => a.staff_id === S.me.id && a.to_d >= todayYmd());
   return `
-  ${pageHead('決裁待ち', `あなた（${esc(myPost)}）の承認を待っている申請です。待っている日数が長い順に並んでいます。`)}
+  ${pageHead('決裁待ち', `あなた（${esc(myPost)}）の承認を待っている申請です。待っている日数が長い順に並んでいます。`, S.extraReady ? `<button class="btn" type="button" data-nav="away">${icon('swap')}留守のときの代わり</button>` : '')}
+  ${covering.map(a => `<section class="alert info"><span class="ai">${icon('swap')}</span><div class="ax"><b>${esc(P(a.staff_id).name)}さんの留守中（${md(a.to_d)}まで）、${esc(P(a.staff_id).name)}さんの決裁をあなたが代わりにできます</b><p>下の決裁待ちに「${esc(P(a.staff_id).name)}さんの代わり」として並んでいます。${a.note ? '理由：' + esc(a.note) : ''}</p></div></section>`).join('')}
+  ${myAway.map(a => `<section class="alert wait"><span class="ai">${icon('cal')}</span><div class="ax"><b>${md(a.from_d)}〜${md(a.to_d)} は留守の設定です（代わり：${esc(P(a.deputy_id).name)}さん）</b><p>その間に届いた申請は、${esc(P(a.deputy_id).name)}さんも承認できます。</p></div><button class="btn" type="button" data-nav="away">変える</button></section>`).join('')}
   ${withMinis ? punchCard(true) : ''}
   ${summary([['inbox', 'turn', '決裁待ち', all.length, 'data-a="noop"'], ['clock', 'back', '3日以上待っている', late, 'data-a="noop"'], ['check', 'ok', '今月 決裁した', doneMonth, isApprover() ? 'data-nav="done"' : '']])}
   <section class="panel flush">
@@ -379,7 +458,7 @@ function inbox(withMinis) {
       <button class="btn text" type="button" data-a="clearSel">選ぶのをやめる</button><button class="btn primary" type="button" data-a="bulkApprove">${icon('check')}選んだ${S.sel.size}件を承認する</button></div>`
       : list.some(canBulk) ? `<p class="bulkhint">${icon('info')}休み・勤務の申請は、左のチェックを付けるとまとめて承認できます。お金のかかる申請は、1件ずつ中身を見て承認します。</p>` : ''}
   </section>
-  ${stuck.length ? `<section class="panel flush"><div class="panel-h"><h2>止まっている申請（3日以上）</h2><span class="sub">総務から声をかけるときの目安です</span></div>${rows(stuck, '', { wait: true })}</section>` : ''}
+  ${stuck.length ? `<section class="panel flush"><div class="panel-h"><h2>止まっている申請（3日以上）</h2><span class="sub">いまの段の人へ、自動で催促のお知らせが届きます（1日1回）</span></div>${rows(stuck, '', { wait: true })}</section>` : ''}
   ${withMinis ? `<div class="two">
     <section class="panel flush"><div class="panel-h"><h2>わたしの申請</h2><button class="btn text sm" type="button" data-nav="list">すべて見る</button></div>
       ${mine.length ? `<ul class="mini">${mine.map(r => `<li class="click" data-open="${r.id}">${pill(r)}<div class="x"><b>${esc(r.title)}</b><span>${esc(r.type_name)}・${r.status === 'wait' ? esc(curText(r)) : r.status === 'ok' ? fmtDay(decidedAt(r)) + ' 決裁' : '申請日 ' + fmtDay(r.created_at)}</span></div>${icon('chevr')}</li>`).join('')}</ul>` : emptyArt('まだ申請していません')}</section>
@@ -405,7 +484,7 @@ function staffHome() {
       <b>${esc(r.title)}</b>${dots(r)}<span class="sub">${esc(curText(r))}</span></li>`).join('')}</ul>`
       : emptyArt('回覧中の申請はありません', '「申請する」から、有給休暇や物品購入などを出せます。')}</section>
   ${done.length ? `<section class="panel flush"><div class="panel-h"><h2>最近 決裁されたもの</h2></div><ul class="mini">${done.map(r => `<li class="click" data-open="${r.id}">${pill(r)}<div class="x"><b>${esc(r.title)}</b><span>${esc(r.type_name)}・${fmtDay(decidedAt(r))} 決裁</span></div>${icon('chevr')}</li>`).join('')}</ul></section>` : ''}
-  <section class="panel tip"><span class="ai">${icon('info')}</span><div><b>はじめての方へ</b><p class="sub" style="margin:2px 0 0">お試しの進め方（20分ほど）を見ながら、何人かの立場で試してみてください。</p></div><button class="btn" type="button" data-nav="howto">進め方を見る</button></section>`;
+  <section class="panel tip"><span class="ai">${icon('info')}</span><div><b>はじめての方へ</b><p class="sub" style="margin:2px 0 0">お試しの進め方（30分ほど）を見ながら、何人かの立場で試してみてください。</p></div><button class="btn" type="button" data-nav="howto">進め方を見る</button></section>`;
 }
 
 VIEWS.howto = function () {
@@ -419,9 +498,12 @@ VIEWS.howto = function () {
     '<b>中村さん</b>で「わたしの勤務」を開き、<b>出勤する</b>を押す。3日前の<b>退勤が遅い日（ずれ）</b>の「時間外の事後の申請」から申請を出す（日にちや時刻は入った状態で開く）',
     '<b>井上師長</b>で「その他」の<b>部署の勤務</b>を開き、確かめることがある人を見る。中村さんの事後の申請を承認し、<b>総務の青木さん</b>が受け付けると、中村さんの勤務の記録に「時間外」と出る',
     '<b>清水さん</b>（<code>shimizu</code>）で「わたしの勤務」を開き、<b>退勤の打刻もれ</b>から「打刻の修正」を申請する。<b>小林さん</b>はいま勤務中なので、<b>退勤する</b>を押せる',
+    '<b>総務の青木さん</b>で「全体の一覧」から<b>言葉や金額で探し</b>、<b>Excelで開ける形で書き出す</b>。「部署の予算」で予算の金額を変えてみる。3日以上止まっている申請には、<b>自動で催促のお知らせ</b>が届いている',
+    '<b>森事務長</b>（<code>mori</code>）で「留守の代わり」から、<b>留守の日と代わりの人（加藤看護部長）</b>を入れる。<b>加藤さん</b>（<code>kato</code>）で入ると、森さんの番の申請を<b>代わりに承認</b>できる。申請の画面から<b>紙の稟議書の形で印刷</b>もできる',
+    '<b>中村さん</b>で前の申請を開き<b>「写して新しく申請」</b>を押す。物品購入では<b>部署の予算の残り</b>が出る。<b>小林さん</b>の「わたしの勤務」で<b>有給の残りと年5日の取得</b>を見る',
     '<b>総務の青木さん</b>で「組織図」を開き、<b>3階東病棟の井上師長のカードを、1階病棟の看護師長の席へ動かす</b>（2人が入れ替わる）。確定の前に、担当が変わる申請の一覧を見る',
   ];
-  return `${pageHead('お試しの進め方', '20分ほどで、申請から決裁と勤怠までの流れを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
+  return `${pageHead('お試しの進め方', '30分ほどで、申請から決裁と勤怠までの流れを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
   <section class="panel"><ol class="steps">${steps.map(s => `<li><div>${s}</div></li>`).join('')}</ol>
   <p class="sub" style="margin:16px 0 0">何人かで同じ人に入っても大丈夫です。総務の人で入ると「種類と回る順番」の下から、見本の状態に戻せます。</p></section>`;
 };
@@ -590,7 +672,20 @@ function monthTable(sid, ym, mine) {
 }
 const monthNav = ym => `<div class="mnav"><button class="btn sm" type="button" data-a="mprev" aria-label="前の月">${icon('back')}前の月</button><b class="num">${monthLabel(ym)}</b><button class="btn sm" type="button" data-a="mnext" ${ym >= todayYmd().slice(0, 7) ? 'disabled' : ''} aria-label="次の月">次の月${icon('chevr')}</button></div>`;
 const hmHtml = m => m >= 60 ? `${Math.floor(m / 60)}<small>時間</small>${m % 60 ? (m % 60) + '<small>分</small>' : ''}` : `${m}<small>分</small>`;
-const workSums = sm => summary([['cal', 'turn', '出勤した日', sm.workDays, 'data-a="noop"', '日'], ['clock', 'ok', '認められた時間外', hmHtml(sm.ot), 'data-a="noop"'], ['info', 'back', '確かめること', sm.todo, 'data-a="noop"']]);
+const workSums = (sm, ls) => summary([['cal', 'turn', '出勤した日', sm.workDays, 'data-a="noop"', '日'], ['clock', 'ok', '認められた時間外', hmHtml(sm.ot), 'data-a="noop"'],
+  ...(ls ? [['star', 'wait', '有給の残り', `${dtxt(ls.left)}<small>日</small>`, 'data-a="noop"']] : []), ['info', 'back', '確かめること', sm.todo, 'data-a="noop"']]);
+// 有給の残りと、年5日の取得（10日以上付いた人は、1年に5日は取ることが決まっている）
+function leaveCard(ls, who) {
+  if (!ls) return '';
+  const need5 = ls.granted >= 10 ? Math.max(0, 5 - ls.taken) : 0;
+  return `<section class="panel leave"><div class="ph2"><h2>有給休暇（${md(ls.g.from_d)}〜${md(ls.g.to_d)}）</h2>${who ? '' : `<button class="btn sm" type="button" data-a="newLeave">${icon('new')}有給を申請する</button>`}</div>
+    <div class="lvrow"><div><span class="sub">残り</span><b class="num big">${dtxt(ls.left)}<small>日</small></b></div>
+      <div><span class="sub">今年度に付いた日数</span><b class="num">${dtxt(ls.granted)}日</b></div><div><span class="sub">繰り越し</span><b class="num">${dtxt(ls.carried)}日</b></div>
+      <div><span class="sub">使った日数</span><b class="num">${dtxt(ls.taken)}日</b></div>${ls.wait ? `<div><span class="sub">申請中</span><b class="num">${dtxt(ls.wait)}日</b></div>` : ''}</div>
+    ${ls.granted >= 10 ? `<div class="five ${need5 ? 'short' : 'ok'}"><span>年5日の取得</span>${bar(Math.min(5, ls.taken), 0, 5)}<b class="num">${dtxt(Math.min(5, ls.taken))}/5日</b>${need5 ? `<span class="lbl back">あと ${dtxt(need5)}日</span>` : '<span class="lbl ok">済み</span>'}</div>` : ''}
+    <p class="small muted" style="margin:8px 0 0">使った日数には、この仕組みを使う前に紙で届けた ${dtxt(ls.prior)}日を含みます。半日は0.5日、時間単位は8時間で1日として数えます（仮の値）。</p>
+  </section>`;
+}
 
 VIEWS.work = function () {
   if (!S.workReady) return `${pageHead('わたしの勤務', '')}<section class="panel"><p>勤怠は、まだ準備中です（Supabase への貼り直しが終わると使えます）。</p></section>`;
@@ -598,7 +693,8 @@ VIEWS.work = function () {
   return `${pageHead('わたしの勤務', '出勤・退勤の打刻と、1か月の勤務の記録です。有給・遅刻早退・時間外などの申請が決裁されると、その日に出ます。')}
   ${punchCard(false)}
   ${sm.todo ? guide(`<b>確かめることが ${sm.todo}件あります。</b>退勤が予定より遅い日は「時間外の事後の申請」を、打刻を忘れた日は「打刻の修正」を出してください。上長が中身を見て決めます（切り捨てはしません）。`) : ''}
-  ${workSums(sm)}
+  ${workSums(sm, S.extraReady ? leaveStat(S.me.id) : null)}
+  ${S.extraReady ? leaveCard(leaveStat(S.me.id)) : ''}
   <section class="panel flush"><div class="panel-h"><h2>勤務の記録</h2>${monthNav(ym)}</div>${monthTable(S.me.id, ym, true)}
   <p class="small muted pfoot">働いた時間は、休憩（日勤など60分・夜勤120分、仮の値）を差し引いた時間です。予定より ${GAP_MIN}分以上遅い退勤を「確かめること」にしています（仮の値）。</p></section>`;
 };
@@ -613,14 +709,16 @@ VIEWS.team = function () {
   const who = S.teamWho && people.some(p => p.id === S.teamWho) ? S.teamWho : null;
   return `${pageHead('部署の勤務', '部署の人の1か月の勤務です。ずれや打刻もれのある人には、事後の申請や打刻の修正を出してもらい、申請の画面で判断します。')}
   <section class="panel flush"><div class="panel-h"><div class="teamsel">${ds.length > 1 ? `<label class="f"><span class="vh">部署</span><select id="tmDept">${ds.map(d => `<option value="${d.id}" ${d.id === S.teamDept ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>` : `<h2>${esc(ds[0]?.name || '')}</h2>`}</div>${monthNav(ym)}</div>
-  ${sums.length ? `<div class="ttable"><table class="teamt"><thead><tr><th>氏名</th><th class="r">出勤した日</th><th class="r">有給</th><th class="r">欠勤</th><th class="r">遅刻・早退</th><th class="r">認められた時間外</th><th>確かめること</th></tr></thead><tbody>
+  ${sums.length ? `<div class="ttable"><table class="teamt"><thead><tr><th>氏名</th><th class="r">出勤した日</th><th class="r">有給</th><th class="r">欠勤</th><th class="r">遅刻・早退</th><th class="r">認められた時間外</th>${S.extraReady ? '<th class="r">有給の残り</th>' : ''}<th>確かめること</th></tr></thead><tbody>
     ${sums.map(([p, s]) => `<tr class="click ${who === p.id ? 'sel' : ''}" data-who="${p.id}" tabindex="0">
       <td class="t-who"><span class="whowrap">${avatar(p.id, 'sm')}<span><span class="tlink">${esc(p.name)}</span><span class="sub">${esc(titleOf(p))}</span></span></span></td>
       <td class="r num">${s.workDays}日</td><td class="r num">${s.leave ? s.leave + '日' : '—'}</td><td class="r num">${s.absent ? s.absent + '日' : '—'}</td><td class="r num">${s.late ? s.late + '回' : '—'}</td>
       <td class="r num">${s.ot ? hmShort(s.ot) : '—'}</td>
+      ${S.extraReady ? (() => { const ls = leaveStat(p.id); return `<td class="r num">${ls ? `${dtxt(ls.left)}日${ls.granted >= 10 && ls.taken < 5 ? `<span class="lbl back sm" title="年5日の取得まで">5日まで あと${dtxt(5 - ls.taken)}</span>` : ''}` : '—'}</td>`; })() : ''}
       <td>${s.todo ? `<span class="lbl back">${icon('info')}${s.todo}件</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}
   </tbody></table></div>` : emptyArt('この部署の勤務の記録はまだありません')}</section>
-  ${who ? `<section class="panel flush" id="teamWho"><div class="panel-h"><h2>${esc(P(who).name)}さんの勤務（${monthLabel(ym)}）</h2><button class="btn text sm" type="button" data-a="closeWho">閉じる</button></div>${monthTable(who, ym, who === S.me.id)}</section>` : guide('名前を押すと、その人の1日ごとの記録が見られます。')}`;
+  ${who ? `<section class="panel flush" id="teamWho"><div class="panel-h"><h2>${esc(P(who).name)}さんの勤務（${monthLabel(ym)}）</h2><button class="btn text sm" type="button" data-a="closeWho">閉じる</button></div>${monthTable(who, ym, who === S.me.id)}</section>
+    ${S.extraReady ? leaveCard(leaveStat(who), true) : ''}` : guide('名前を押すと、その人の1日ごとの記録と有給の日数が見られます。')}`;
 };
 
 // 勤務の記録から、申請の画面を中身を入れた状態で開く
@@ -646,33 +744,150 @@ function openWorkReq(kind, day) {
   render(); window.scrollTo({ top: 0 });
 }
 
+// ---- 留守のときの代わり
+VIEWS.away = function () {
+  if (!S.extraReady) return VIEWS.home();
+  const today = todayYmd();
+  const live = S.away.filter(a => a.to_d >= today);
+  const mine = live.filter(a => a.staff_id === S.me.id);
+  const covering = live.filter(a => a.deputy_id === S.me.id);
+  const canDel = a => a.staff_id === S.me.id || a.set_by === S.me.id || S.me.is_soumu;
+  const myDepts = deptChain(S.me.dept_id);
+  // 代わりの人の候補：同じ部署・上の部署の人を先に
+  const cand = S.staff.filter(x => x.id !== S.me.id).sort((a, b) => (myDepts.indexOf(a.dept_id) + 1 || 99) - (myDepts.indexOf(b.dept_id) + 1 || 99) || a.sort - b.sort);
+  const span = a => `${md(a.from_d)}${a.to_d !== a.from_d ? '〜' + md(a.to_d) : ''}`;
+  const row = a => `<tr><td class="whowrap">${avatar(a.staff_id, 'sm')}<span>${esc(P(a.staff_id).name)}<span class="sub">${esc(titleOf(P(a.staff_id)))}</span></span></td>
+    <td class="num">${span(a)}${a.from_d <= today ? ' <span class="lbl wait sm">留守中</span>' : ''}</td><td>${esc(P(a.deputy_id).name)}</td><td>${esc(a.note) || '<span class="muted">—</span>'}</td>
+    <td class="r">${canDel(a) ? `<button class="btn sm" type="button" data-a="awayDel" data-aw="${a.id}">取り消す</button>` : ''}</td></tr>`;
+  const table = list => `<div class="dtable"><table class="plain awayt"><thead><tr><th>留守の人</th><th>日にち</th><th>代わりの人</th><th>理由</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`;
+  return `${pageHead('留守のときの代わり', '出張や休みで留守にする日と、その間に代わりに決裁する人を決めます。代わりの人は、留守の人の番の申請を承認・差し戻しできます。')}
+  ${covering.length ? guide(`<b>あなたは ${covering.map(a => `${esc(P(a.staff_id).name)}さん（${span(a)}）`).join('・')} の代わりです。</b>その日に届いている申請は「決裁待ち」に並びます。`) : ''}
+  <div class="two">
+  <section class="panel"><h2>留守にする日を入れる</h2>
+    <form id="awf" class="form" novalidate>
+      ${S.me.is_soumu ? `<label class="f wide"><span class="fl">留守の人</span><select id="awWho"><option value="">自分（${esc(S.me.name)}）</option>${S.staff.filter(x => x.id !== S.me.id && S.posts.some(p => p.holder_id === x.id)).map(x => `<option value="${x.id}">${esc(x.name)}（${esc(S.posts.filter(p => p.holder_id === x.id).map(postLabel).join('・'))}）</option>`).join('')}</select><span class="hint">総務は、急な休みのときなどに、ほかの人の分も入れられます。</span></label>` : ''}
+      <label class="f"><span class="fl">留守の日（から）<span class="req">※必須</span></span><input id="awFrom" type="date" value="${today}"></label>
+      <label class="f"><span class="fl">留守の日（まで）<span class="req">※必須</span></span><input id="awTo" type="date" value="${today}"></label>
+      <label class="f wide"><span class="fl">代わりの人<span class="req">※必須</span></span><select id="awDep"><option value="">選んでください</option>${cand.map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}・${esc(titleOf(x))}）</option>`).join('')}</select><span class="hint">例：師長の留守は副師長、事務長の留守は総務課長。代わりの人にお知らせが届きます。</span></label>
+      <label class="f wide"><span class="fl">理由<span class="opt">なくても大丈夫</span></span><input id="awNote" placeholder="例：学会で出張"></label>
+      <div class="wide"><button class="btn primary" type="submit">${icon('swap')}この内容で入れる</button></div>
+    </form></section>
+  <section class="panel flush"><div class="panel-h"><h2>わたしの留守</h2></div>${mine.length ? table(mine) : emptyArt('いまは入っていません')}
+    <p class="small muted pfoot">代わりの人も、自分が出した申請（自分が代わりに出した申請）には印を押せません。</p></section>
+  </div>
+  <section class="panel flush"><div class="panel-h"><h2>病院の留守の予定</h2><span class="sub">今日から先の分</span></div>${live.length ? table(live) : emptyArt('留守の予定はありません')}</section>`;
+};
+
+// ---- 部署の予算
+VIEWS.budget = function () {
+  if (!S.extraReady || !(S.me.is_soumu || S.me.is_boss)) return VIEWS.home();
+  const ds = S.depts.filter(d => S.me.is_soumu || S.budgets.some(b => b.dept_id === d.id) || S.ringi.some(r => r.dept_id === d.id));
+  const tot = { amount: 0, used: 0, wait: 0 };
+  const rowsH = ds.map(d => {
+    const bs = budgetStat(d.id);
+    if (!bs.none) { tot.amount += bs.amount; tot.used += bs.used; tot.wait += bs.wait; }
+    const editing = S.budgetEdit === d.id;
+    const amt = editing ? `<span class="bedit"><input id="bgAmt" inputmode="numeric" value="${bs.none ? '' : bs.amount}" aria-label="${esc(d.name)}の予算"><button class="btn primary sm" type="button" data-a="budgetSave" data-dept="${d.id}">保存</button><button class="btn text sm" type="button" data-a="budgetCancel">やめる</button></span>`
+      : bs.none ? '<span class="muted">決まっていません</span>' : yen(bs.amount);
+    return `<tr class="${!bs.none && bs.after < 0 ? 'over' : ''}"><td style="padding-left:${12 + deptDepth(d.id) * 14}px"><b>${esc(d.name)}</b></td>
+      <td class="r num">${amt}</td><td class="r num">${yen(bs.used) || '0円'}</td><td class="r num">${bs.wait ? yen(bs.wait) : '—'}</td>
+      <td class="r num">${bs.none ? '—' : `<b class="${bs.left < 0 ? 'neg' : ''}">${yen(bs.left)}</b>`}</td>
+      <td class="bcell">${bs.none ? '' : `${bar(bs.used, bs.wait, bs.amount)}<span class="sub num">${bs.amount ? Math.round(bs.used / bs.amount * 100) : 0}%</span>`}</td>
+      ${S.me.is_soumu ? `<td class="r">${editing ? '' : `<button class="btn sm" type="button" data-a="budgetEdit" data-dept="${d.id}">変える</button>`}</td>` : ''}</tr>`;
+  }).join('');
+  return `${pageHead('部署の予算', `${fyLabel()}（4月〜3月）の部署ごとの予算と、使った額です。「お金・購入」の申請が決裁されると、その申請者の部署の使った額に入ります。`)}
+  ${summary([['yen', 'turn', '予算の合計', yen(tot.amount), 'data-a="noop"'], ['check', 'ok', '決裁済み', yen(tot.used), 'data-a="noop"'], ['clock', 'wait', '申請中', yen(tot.wait), 'data-a="noop"']])}
+  <section class="panel flush"><div class="dtable"><table class="plain budt"><thead><tr><th>部署</th><th class="r">予算</th><th class="r">決裁済み</th><th class="r">申請中</th><th class="r">残り</th><th>使った割合</th>${S.me.is_soumu ? '<th></th>' : ''}</tr></thead><tbody>${rowsH}</tbody></table></div>
+  <p class="small muted pfoot">棒の濃い色が決裁済み、薄い色が申請中です。申請の画面にも、その部署の予算の残りが出ます。${S.me.is_soumu ? '予算の金額は総務が「変える」から直せます。' : ''}</p></section>`;
+};
+
+// ---- 探す（言葉・金額・申請日・種類）と、Excel で開ける形（CSV）の書き出し
+const Q = () => S.qs[S.view] || (S.qs[S.view] = { q: '', type: '', min: '', max: '', from: '', to: '' });
+const qOn = q => !!(q.q || q.type || q.min || q.max || q.from || q.to);
+const toHalf = t => String(t || '').replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+function qMatch(r, q) {
+  if (q.type && r.type_name !== q.type) return false;
+  const amt = r.amount == null ? null : +r.amount;
+  const yenv = v => parseInt(toHalf(v).replace(/[^0-9]/g, ''), 10);
+  if (q.min && !(amt != null && amt >= yenv(q.min))) return false;
+  if (q.max && !(amt != null && amt <= yenv(q.max))) return false;
+  const day = ymdOf(Date.parse(r.created_at));
+  if (q.from && day < q.from) return false;
+  if (q.to && day > q.to) return false;
+  if (q.q) {
+    const hay = [no(r), r.title, r.body, r.type_name, P(r.owner_id).name, P(r.owner_id).dept, P(r.filer_id).name, r.last_comment,
+      ...(r.details || []).map(d => d.value), ...logOf(r.id).map(l => l.comment)].join(' ').toLowerCase();
+    if (!toHalf(q.q).toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+function searchBar(list) {
+  const q = Q();
+  const types = [...new Set(list.map(r => r.type_name))];
+  return `<form class="sbar" id="sf" role="search">
+    <label class="f sq"><span class="fl">言葉で探す</span><span class="sin">${icon('search')}<input id="sfQ" value="${esc(q.q)}" placeholder="件名・内容・申請者・申請番号など"></span></label>
+    <label class="f"><span class="fl">種類</span><select id="sfType"><option value="">すべて</option>${types.map(t => `<option ${t === q.type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+    <div class="f"><span class="fl">金額（円）</span><span class="rng"><input id="sfMin" inputmode="numeric" value="${esc(q.min)}" placeholder="下限" aria-label="金額の下限">〜<input id="sfMax" inputmode="numeric" value="${esc(q.max)}" placeholder="上限" aria-label="金額の上限"></span></div>
+    <div class="f"><span class="fl">申請日</span><span class="rng"><input id="sfFrom" type="date" value="${esc(q.from)}" aria-label="申請日（から）">〜<input id="sfTo" type="date" value="${esc(q.to)}" aria-label="申請日（まで）"></span></div>
+    <div class="sbtn"><button class="btn primary" type="submit">${icon('search')}探す</button>${qOn(q) ? '<button class="btn text" type="button" data-a="qClear">条件を消す</button>' : ''}</div>
+  </form>`;
+}
+// 一覧の下の「何件」と書き出しのボタン
+const listFoot = (n, total) => `<div class="lfoot"><span class="sub">${n === total ? `${n}件` : `${total}件のうち <b>${n}件</b> が当てはまります`}</span><span class="sp"></span>
+  ${n ? `<button class="btn sm" type="button" data-a="csv">${icon('down')}Excelで開ける形で書き出す（CSV）</button>` : ''}</div>`;
+const STL = { wait: '回覧中', ok: '決裁済み', back: '差し戻し', no: '却下' };
+function downloadCsv(list) {
+  const cell = v => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const head = ['申請番号', '種類', '件名', '申請者', '部署', '代わりに申請した人', '金額', '申請日', '状況', 'いまの段', '決裁日', '内容', '項目'];
+  const lines = list.map(r => { const c = cur(r); return [no(r), r.type_name, r.title, P(r.owner_id).name, P(r.owner_id).dept,
+    r.filer_id !== r.owner_id ? P(r.filer_id).name : '', r.amount ?? '', ymdOf(Date.parse(r.created_at)), STL[r.status] || r.status,
+    c ? `${c.label}（${names(c.approver_ids)}）` : '', decidedAt(r) ? ymdOf(Date.parse(decidedAt(r))) : '', r.body,
+    (r.details || []).map(d => `${d.label}：${d.value}`).join(' ／ ')].map(cell).join(','); });
+  const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  // 名前は英数字にする（日本語の名前は、パソコンによっては「download」になるため）
+  a.download = `ringi_${todayYmd().replace(/-/g, '')}.csv`; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast(`${list.length}件を書き出しました。Excelで開けます`);
+}
+// いま画面に出ている一覧（書き出しで使う）
+let shownList = [];
+const withQ = list => { const q = Q(); const out = qOn(q) ? list.filter(r => qMatch(r, q)) : list; shownList = out; return out; };
+
 const LF = [['wait', '回覧中'], ['back', '差し戻し'], ['ok', '決裁済み'], ['no', '却下'], ['all', 'すべて']];
 VIEWS.list = function () {
   const mine = S.ringi.filter(isMine);
   const m = (r, k) => k === 'all' || r.status === k;
   const items = LF.filter(([k]) => k !== 'no' || mine.some(r => r.status === 'no'));
   if (!items.some(([k]) => k === S.listFilter)) S.listFilter = 'all';
-  const list = mine.filter(r => m(r, S.listFilter));
-  return `${pageHead('わたしの申請', '自分が出したもの（代わりに出してもらったものも）です。回覧中のものは、ほかの人の決裁を待っています。', `<button class="btn primary" type="button" data-nav="new">${icon('new')}申請する</button>`)}
+  const base = mine.filter(r => m(r, S.listFilter));
+  const list = withQ(base);
+  return `${pageHead('わたしの申請', '自分が出したもの（代わりに出してもらったものも）です。回覧中のものは、ほかの人の決裁を待っています。前の申請を開くと「写して申請」できます。', `<button class="btn primary" type="button" data-nav="new">${icon('new')}申請する</button>`)}
+  ${searchBar(mine)}
   <section class="panel flush">${tabs(items.map(([k, l]) => [k, l, mine.filter(r => m(r, k)).length]), S.listFilter, 'data-lf')}
-  ${rows(list, S.listFilter === 'wait' ? 'いま回覧中の申請はありません' : '当てはまる申請はありません', { wait: true, dec: true })}</section>`;
+  ${rows(list, qOn(Q()) ? '条件に当てはまる申請はありません' : S.listFilter === 'wait' ? 'いま回覧中の申請はありません' : '当てはまる申請はありません', { wait: true, dec: true })}
+  ${listFoot(list.length, base.length)}</section>`;
 };
 
 VIEWS.done = function () {
   const id = S.me.id;
-  const list = S.ringi.filter(r => routeOf(r.id).some(x => x.stamped_by === id));
+  const base = S.ringi.filter(r => routeOf(r.id).some(x => x.stamped_by === id));
+  const list = withQ(base);
   return `${pageHead('決裁した履歴', 'あなたが承認した申請です。そのあとの進み具合もここで分かります。')}
-  <section class="panel flush">${rows(list, 'まだ承認した申請はありません', { dec: true })}</section>`;
+  ${searchBar(base)}
+  <section class="panel flush">${rows(list, qOn(Q()) ? '条件に当てはまる申請はありません' : 'まだ承認した申請はありません', { dec: true })}${listFoot(list.length, base.length)}</section>`;
 };
 
 VIEWS.all = function () {
   if (!S.me.is_soumu) return VIEWS.home();
   const f = S.filter;
   const match = (r, k) => k === 'all' || (k === 'wait' && r.status === 'wait') || (k === 'ok' && r.status === 'ok') || (k === 'back' && (r.status === 'back' || r.status === 'no'));
-  const list = S.ringi.filter(r => match(r, f));
-  return `${pageHead('全体の一覧', '病院全体の申請です。どこで止まっているかが分かるので、催促や台帳づくりの手間が減ります。')}
+  const base = S.ringi.filter(r => match(r, f));
+  const list = withQ(base);
+  return `${pageHead('全体の一覧', '病院全体の申請です。言葉や金額で探して、Excelで開ける形で書き出せます（台帳づくりに使えます）。')}
+  ${searchBar(S.ringi)}
   <section class="panel flush">${tabs([['all', 'すべて'], ['wait', '回覧中'], ['ok', '決裁済み'], ['back', '差し戻し・却下']].map(([k, l]) => [k, l, S.ringi.filter(r => match(r, k)).length]), f, 'data-filter')}
-  ${rows(list, '当てはまる申請はありません', { wait: true, dec: true })}</section>`;
+  ${rows(list, qOn(Q()) ? '条件に当てはまる申請はありません' : '当てはまる申請はありません', { wait: true, dec: true })}${listFoot(list.length, base.length)}</section>`;
 };
 
 function fieldInput(fd, val) {
@@ -702,6 +917,7 @@ VIEWS.new = function () {
   return `
   ${pageHead(ed ? '直して出し直す' : esc(t.name), ed ? '直した内容で出し直すと、最初の段から回り直します。' : '入れ終わったら「確かめる画面へ進む」を押してください。まだ出されません。')}
   ${stepBar(2)}
+  ${pf && pf.from ? guide(`<b>${esc(no(R(pf.from) || { id: pf.from }))}「${esc(R(pf.from)?.title || '')}」を写しました。</b>中身を見直してから出してください。日にちと添付書類は写していません。`) : ''}
   <form id="nf" novalidate>
   <input type="hidden" id="nfType" value="${t.id}">
   <div id="nfEdit" class="formcols">
@@ -709,9 +925,11 @@ VIEWS.new = function () {
     <div class="typehead">${icon(GRP_ICON[t.grp] || 'doc')}<div><b>${esc(t.name)}</b><span class="sub" id="nfDesc"></span></div>${ed ? '' : '<button class="btn text sm" type="button" data-a="chgType">種類を変える</button>'}</div>
     <div class="form">
     ${!ed && canProxy() ? `<label class="f wide" id="nfProxyWrap"><span class="fl">代わりに申請する相手</span><select id="nfProxy"><option value="">（自分の分として出す）</option>${proxyTargets().map(s => `<option value="${s.id}">${esc(s.staff_no)}　${esc(s.name)}（${esc(s.dept)}）</option>`).join('')}</select><span class="hint">本人が出せないときだけ選びます。</span></label>` : ''}
+    <div class="wide" id="nfLeave"></div>
     <div class="wide form" id="nfFields">${(t.fields || []).map(fd => fieldInput(fd, vals[fd.k])).join('')}</div>
-    <label class="f" id="nfAmountWrap"><span class="fl">金額（円）</span><input id="nfAmount" inputmode="numeric" value="${ed && ed.amount != null ? ed.amount : ''}" placeholder="例：98000"><span class="hint">お金がかからない場合は空のままで大丈夫です。</span></label>
-    <label class="f wide"><span class="fl">件名<span class="req">※必須</span></span><input id="nfTitle" value="${esc(ed ? ed.title : '')}" placeholder="例：鉛筆の購入"></label>
+    <label class="f" id="nfAmountWrap"><span class="fl">金額（円）</span><input id="nfAmount" inputmode="numeric" value="${ed && ed.amount != null ? ed.amount : pf && pf.amount != null ? pf.amount : ''}" placeholder="例：98000"><span class="hint">お金がかからない場合は空のままで大丈夫です。</span></label>
+    <div class="f wide" id="nfBudget"></div>
+    <label class="f wide"><span class="fl">件名<span class="req">※必須</span></span><input id="nfTitle" value="${esc(ed ? ed.title : pf && pf.title ? pf.title : '')}" placeholder="例：鉛筆の購入"></label>
     <label class="f wide"><span class="fl" id="nfBodyLabel">内容</span><textarea id="nfBody" rows="4">${esc(ed ? ed.body : pf ? pf.body : '')}</textarea></label>
     <div class="f wide"><span class="fl">添付書類<span class="opt">なくても大丈夫</span></span>
       ${ed && filesOf(ed.id).length ? `<p class="hint" style="margin:0 0 6px">今の添付：${filesOf(ed.id).map(f => esc(f.name)).join('、')}（外すときは申請の画面で）</p>` : ''}
@@ -748,6 +966,10 @@ function confirmHtml() {
     ...($('#nfBody').value.trim() ? [[esc(t.body_label || '内容'), `<span class="pre">${esc($('#nfBody').value.trim())}</span>`]] : []),
     ['添付書類', S.pick.length ? S.pick.map(f => esc(f.name)).join('<br>') : (ed && filesOf(ed.id).length ? filesOf(ed.id).map(f => esc(f.name)).join('<br>') : '<span class="muted">なし</span>')],
   ];
+  if (S.extraReady && t.name.startsWith('有給')) { const ls = leaveStat(owner, ed ? ed.id : null); const need = leaveDays(details);
+    if (ls) rowsKv.push(['有給の残り', `<span class="num">${dtxt(ls.after)}日 → 出したあと <b>${dtxt(ls.after - need)}日</b></span>${ls.wait ? '<span class="sub">申請中の分も引いた日数</span>' : ''}`]); }
+  if (S.extraReady && t.grp === 'お金・購入' && amount) { const bs = budgetStat(P(owner).dept_id, ed ? ed.id : null);
+    if (bs && !bs.none) rowsKv.push([`予算の残り<br><span class="sub">${esc(P(owner).dept)}</span>`, `<span class="num">${yen(bs.after)} → 出したあと <b class="${bs.after - amount < 0 ? 'neg' : ''}">${yen(bs.after - amount)}</b></span>${bs.after - amount < 0 ? '<span class="sub neg">予算を超えます</span>' : ''}`]); }
   return `<div class="formcols"><section class="panel flush"><div class="panel-h"><h2>この内容で出します</h2></div>
     <table class="kvt">${rowsKv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
     <aside class="panel routebox"><h2>この順番で回ります</h2>${pr.length ? `<ol class="vflow">${pr.map(s => `<li><span class="vd"></span><div><span class="sub">${esc(s.label)}</span><b>${esc(names(s.ids))}</b></div></li>`).join('')}</ol>
@@ -840,6 +1062,33 @@ function updateForm(first) {
   if (first && !ed && !$('#nfTitle').value) $('#nfTitle').value = autoTitle(t, details);
   $('#nfProxyNote').innerHTML = owner !== filer && !ed
     ? `<div class="proxybox" style="margin-bottom:8px">${esc(P(owner).name)}さん（${esc(P(owner).dept)}）の代わりに申請します。本人にお知らせが届きます。代わりに申請した人は、自分では印を押せません。</div>` : '';
+  // 有給の残り
+  const lb = $('#nfLeave');
+  if (lb) {
+    const ls = t.name.startsWith('有給') && S.extraReady ? leaveStat(owner, ed ? ed.id : null) : null;
+    if (!ls) lb.innerHTML = '';
+    else {
+      const need = leaveDays(details);
+      const short = need > ls.after;
+      lb.innerHTML = `<div class="infobox ${short ? 'bad' : ''}">${icon('cal')}<div><b>有給の残り ${dtxt(ls.left)}日</b>${owner !== S.me.id ? `（${esc(P(owner).name)}さん）` : ''}
+        <span class="sub">今年度 ${dtxt(ls.granted)}日＋繰り越し ${dtxt(ls.carried)}日のうち、使った ${dtxt(ls.taken)}日${ls.wait ? `・申請中 ${dtxt(ls.wait)}日` : ''}（${md(ls.g.to_d)}まで使えます）</span>
+        ${need ? `<span class="nx">この申請で <b>${dtxt(need)}日</b> → 出したあとの残り <b class="${short ? 'neg' : ''}">${dtxt(ls.after - need)}日</b>${short ? '　残りが足りません' : ''}</span>` : ''}</div></div>`;
+    }
+  }
+  // 部署の予算の残り
+  const bb = $('#nfBudget');
+  if (bb) {
+    const isM = t.grp === 'お金・購入' && t.use_amount && S.extraReady;
+    const bs = isM ? budgetStat(P(owner).dept_id, ed ? ed.id : null) : null;
+    bb.hidden = !bs;
+    if (bs) {
+      const a = amount || 0;
+      bb.innerHTML = bs.none ? `<span class="fl">${esc(P(owner).dept)}の予算</span><div class="infobox">${icon('yen')}<div><b>${fyLabel()}の予算は決まっていません</b><span class="sub">総務の「部署の予算」で入れられます。</span></div></div>`
+        : `<span class="fl">${esc(P(owner).dept)}の予算（${fyLabel()}）</span><div class="infobox ${a && a > bs.after ? 'bad' : ''}">${icon('yen')}<div><b>残り ${yen(bs.left)}</b>
+          <span class="sub">予算 ${yen(bs.amount)}・決裁済み ${yen(bs.used)}${bs.wait ? `・申請中 ${yen(bs.wait)}` : ''}</span>${bar(bs.used, bs.wait + a, bs.amount)}
+          ${a ? `<span class="nx">この申請 ${yen(a)} を入れると、残り <b class="${bs.after - a < 0 ? 'neg' : ''}">${yen(bs.after - a)}</b>（申請中の分も引いた額）${bs.after - a < 0 ? '<br>予算を超えます。超える理由を内容に書いてください（出すことはできます）' : ''}</span>` : ''}</div></div>`;
+    }
+  }
   const pr = previewRoute(t.id, amount, owner, filer);
   const chips = pr.filter(s => !(s.on && !s.ids.length)).map(s => {
     const cond = s.min != null ? `（${yen(s.min)}以上のとき）` : '';
@@ -864,6 +1113,12 @@ function validateForm() {
   const miss = (t.fields || []).filter(fd => fd.required && !details.find(d => d.k === fd.k));
   if (miss.length) { toast(`「${miss[0].label}」を入れてください`); $(`#fd_${miss[0].k}`)?.focus(); return false; }
   if (!$('#nfTitle').value.trim()) { toast('件名を入れてください'); $('#nfTitle').focus(); return false; }
+  const { ed, owner } = formState();
+  if (t.name.startsWith('有給') && S.extraReady) {
+    const need = leaveDays(details), ls = leaveStat(owner, ed ? ed.id : null);
+    if (details.find(d => d.k === 'how')?.value === '時間単位' && !need) { toast('時間単位のときは、時間を「13:00〜15:00」の形で入れてください'); $('#fd_hours')?.focus(); return false; }
+    if (ls && need > ls.after && dval({ details }, 'from') >= ls.g.from_d && dval({ details }, 'from') <= ls.g.to_d) { toast(`有給の残りが足りません（申請中を引いた残り ${dtxt(ls.after)}日、この申請は ${dtxt(need)}日）`); return false; }
+  }
   return true;
 }
 function showConfirm(on) {
@@ -915,14 +1170,21 @@ function detail(r) {
   const t = T(r.type_id);
   const owner = P(r.owner_id), filer = P(r.filer_id);
   let action = '';
+  const pxy = mine ? proxyFor(r) : null;
   if (mine) {
-    action = `<section class="panel actcard"><h2>あなたの番です（${esc(c.label)}として）</h2>
+    action = `<section class="panel actcard"><h2>${pxy ? `${esc(P(pxy).name)}さんの代わりに、あなたが決裁できます（${esc(c.label)}）` : `あなたの番です（${esc(c.label)}として）`}</h2>
+    ${pxy ? `<p class="sub" style="margin:4px 0 0">${esc(P(pxy).name)}さんは ${md(awayOf(pxy).to_d)} まで留守です。承認すると、印の欄とやり取りの記録に「${esc(P(pxy).name)}の代わり」と残ります。</p>` : ''}
     ${c.approver_ids.length > 1 ? `<p class="sub" style="margin:4px 0 0">この段は ${esc(names(c.approver_ids))} のどなたか1人が承認すると次へ進みます。</p>` : ''}
     <label class="f" style="margin-top:14px"><span class="fl">コメント</span><textarea id="cm" rows="2" placeholder="例：見積りを2社分そろえてください"></textarea><span class="hint">承認のときはなくても大丈夫です。差し戻し・却下のときは理由を書いてください。</span></label>
     <div class="actbar inpanel"><button class="btn primary" type="button" data-a="approve" data-id="${r.id}">${icon('check')}承認する</button><button class="btn" type="button" data-a="back" data-id="${r.id}">${icon('undo')}差し戻す</button><span class="sp"></span><button class="btn text danger" type="button" data-a="reject" data-id="${r.id}">却下する</button></div></section>`;
   } else if (c) {
     action = `<section class="panel infocard"><p style="margin:0"><b>いま ${esc(sanNames(c.approver_ids))}の決裁待ちです</b>（${esc(c.label)}・${waitDays(r)}日）。${route.some(x => x.approver_ids.includes(S.me.id) && x.step_no > r.stage) ? 'あなたの番はこのあとです。' : ''}</p>
-    ${isOwner ? `<p class="sub" style="margin:6px 0 0">${esc(sanNames(c.approver_ids))}の画面の「決裁待ち」に出ています。お試しで確かめるときは、ログアウトして <code>${c.approver_ids.map(i => esc(P(i).login)).join('</code> か <code>')}</code> で入り直してください。</p>` : ''}</section>`;
+    ${awayNote(c.approver_ids) ? `<p class="sub" style="margin:6px 0 0">${icon('swap')} ${esc(awayNote(c.approver_ids))}。</p>` : ''}
+    ${isOwner ? `<p class="sub" style="margin:6px 0 0">${esc(sanNames(c.approver_ids))}の画面の「決裁待ち」に出ています。お試しで確かめるときは、ログアウトして <code>${c.approver_ids.map(i => esc(P(i).login)).join('</code> か <code>')}</code> で入り直してください。</p>` : ''}
+    ${S.extraReady && (isOwner || S.me.is_soumu) ? (() => { const last = logOf(r.id).filter(l => l.action === 'remind').pop();
+      const recent = last && Date.now() - Date.parse(last.at) < 12 * 36e5;
+      return `<div class="row rmd"><button class="btn sm" type="button" data-a="remind" data-id="${r.id}" ${recent ? 'disabled' : ''}>${icon('bell')}催促のお知らせを送る</button>
+        <span class="sub">${recent ? `${fmtAt(last.at)} に催促しました（半日に1回まで）` : '3日止まると自動でも送られます（1日1回）'}</span></div>`; })() : ''}</section>`;
   } else if (r.status === 'back' && isOwner) {
     action = `<section class="alert back"><span class="ai">${icon('undo')}</span><div class="ax"><b>${esc(P(r.last_by).name)}さんから差し戻されました</b><p>「${esc(r.last_comment)}」</p></div><button class="btn primary" type="button" data-a="edit" data-id="${r.id}">直して出し直す</button></section>`;
   } else if (r.status === 'back') {
@@ -948,7 +1210,7 @@ function detail(r) {
     ${node('done', icon('send'), '申請', esc(owner.name), fmtAt(r.created_at))}
     ${route.map((s, i) => { const st = stateOf(i); return node(st, st === 'done' ? icon('check') : st === 'stop' ? '!' : i + 1,
       esc(s.label), `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<span class="muted">（どなたか1人）</span>' : ''}`,
-      s.stamped_by ? `${fmtAt(s.stamped_at)} ${esc(P(s.stamped_by).name)}` : st === 'now' ? `${waitDays(r)}日待っています` : '',
+      s.stamped_by ? `${fmtAt(s.stamped_at)} ${esc(P(s.stamped_by).name)}${s.proxy_for ? `（${esc(P(s.proxy_for).name)}の代わり）` : ''}` : st === 'now' ? `${waitDays(r)}日待っています${s.approver_ids.some(awayOf) ? `・${esc(s.approver_ids.filter(awayOf).map(i => P(i).name).join('・'))}は留守` : ''}` : '',
       st === 'now' ? '<span class="lbl wait">いまの番</span>' : st === 'stop' ? `<span class="lbl back">${r.status === 'back' ? '差し戻し' : '却下'}</span>` : ''); }).join('')}
     ${node(r.status === 'ok' ? 'done fin' : 'todo fin', icon('flag'), '決裁', r.status === 'ok' ? '決裁されました' : 'すべて承認されると決裁', decidedAt(r) ? fmtAt(decidedAt(r)) : '')}
   </ol>`;
@@ -963,6 +1225,10 @@ function detail(r) {
       <div><dt>決裁日</dt><dd class="num">${decidedAt(r) ? fmtDay(decidedAt(r)) : '—'}</dd></div>
       ${r.amount != null && t?.use_amount ? `<div><dt>金額</dt><dd class="num big">${yen(r.amount)}</dd></div>` : ''}
     </dl>
+    <div class="dacts">
+      ${t && t.in_use ? `<button class="btn sm" type="button" data-a="copy" data-id="${r.id}">${icon('copy')}写して新しく申請</button>` : ''}
+      <button class="btn sm" type="button" data-a="print">${icon('print')}紙の稟議書の形で印刷</button>
+    </div>
   </section>
   <section class="panel"><h2>承認の流れ</h2>${flow}</section>
   <div class="dgrid">
@@ -970,18 +1236,68 @@ function detail(r) {
       ${action}
       <section class="panel flush"><div class="panel-h"><h2>申請の内容</h2></div>
         <table class="kvt">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
+      ${budgetCard(r)}
       ${filesCard(r)}
       <section class="panel"><h2>承認欄</h2>
-        ${route.length ? `<div class="stamps">${route.map((s, i) => `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko"><span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '決裁待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}</div></div>`).join('')}</div>` : '<p class="sub" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
+        ${route.length ? `<div class="stamps">${route.map((s, i) => `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko">${s.proxy_for ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '決裁待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${s.proxy_for ? `${esc(P(s.stamped_by).name)}<br>（${esc(P(s.proxy_for).name)}の代わり）` : `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}`}</div></div>`).join('')}</div>` : '<p class="sub" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
       </section>
     </div>
     <aside class="dside">
       <section class="panel"><h2>やり取りの記録</h2><ul class="timeline">
-        ${logOf(r.id).map(l => `<li>${l.actor_id ? avatar(l.actor_id, 'sm') : `<span class="avt sm sys">${icon('org')}</span>`}<div><div>${esc(l.text)}</div>${l.comment ? `<div class="c">「${esc(l.comment)}」</div>` : ''}<div class="tt num">${fmtAt(l.at)}</div></div></li>`).join('')}
+        ${logOf(r.id).map(l => `<li class="${l.action === 'remind' ? 'rmd' : ''}">${l.action === 'remind' ? `<span class="avt sm sys bell">${icon('bell')}</span>` : l.actor_id ? avatar(l.actor_id, 'sm') : `<span class="avt sm sys">${icon('org')}</span>`}<div><div>${esc(l.text)}</div>${l.comment ? `<div class="c">「${esc(l.comment)}」</div>` : ''}<div class="tt num">${fmtAt(l.at)}</div></div></li>`).join('')}
         ${c ? `<li class="pending"><span class="avt sm sys">${icon('clock')}</span><div><div class="sub">${esc(c.label)}の決裁待ち（${esc(names(c.approver_ids))}）</div></div></li>` : ''}
       </ul></section>
     </aside>
-  </div>`;
+  </div>
+  ${printDoc(r)}`;
+}
+
+// 申請の画面の「予算」（お金・購入のとき）。決裁する人が、部署の予算の残りを見て判断できるように。
+function budgetCard(r) {
+  if (!S.extraReady || !isMoney(r) || !r.dept_id) return '';
+  const bs = budgetStat(r.dept_id, r.id);
+  const dn = deptById(r.dept_id)?.name || '';
+  if (bs.none) return `<section class="panel budget"><h2>予算</h2><p class="sub" style="margin:6px 0 0">${esc(dn)}の${fyLabel()}の予算は、まだ決まっていません。</p></section>`;
+  const a = num(r.amount);
+  const counted = r.status === 'ok' || r.status === 'wait';
+  const after = bs.after - (counted ? a : 0);
+  return `<section class="panel budget"><div class="ph2"><h2>予算（${esc(dn)}・${fyLabel()}）</h2>${S.me.is_soumu || S.me.is_boss ? '<button class="btn text sm" type="button" data-nav="budget">部署の予算を見る</button>' : ''}</div>
+    ${bar(bs.used + (r.status === 'ok' ? a : 0), bs.wait + (r.status === 'wait' ? a : 0), bs.amount)}
+    <table class="kvt slim"><tr><th>予算</th><td class="num">${yen(bs.amount)}</td></tr>
+      <tr><th>決裁済み（この申請のほか）</th><td class="num">${yen(bs.used)}</td></tr>
+      <tr><th>申請中（この申請のほか）</th><td class="num">${yen(bs.wait)}</td></tr>
+      <tr><th>この申請</th><td class="num">${yen(a)}</td></tr>
+      <tr><th>${r.status === 'ok' ? '残り' : '承認したあとの残り'}</th><td class="num"><b class="${after < 0 ? 'neg' : ''}">${yen(after)}</b>${after < 0 ? '　<span class="lbl back">予算を超えます</span>' : ''}</td></tr></table>
+  </section>`;
+}
+
+// 紙の稟議書の形（印刷のときだけ出る）。印の欄は右に申請者、左へ行くほど上の人。
+function printDoc(r) {
+  const route = routeOf(r.id), t = T(r.type_id), owner = P(r.owner_id);
+  const cell = (label, stamp, who) => `<td><div class="ph">${esc(label)}</div><div class="pb">${stamp}</div><div class="pw">${who}</div></td>`;
+  const hk = (id, at, dai) => `<div class="hanko">${dai ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(id).name.split(' ')[0])}</span><span class="d">${fmtDay(at)}</span></div>`;
+  const cells = route.slice().reverse().map(s => cell(s.label, s.stamped_by ? hk(s.stamped_by, s.stamped_at, !!s.proxy_for) : '',
+    s.stamped_by ? esc(P(s.stamped_by).name) + (s.proxy_for ? `<br>（${esc(P(s.proxy_for).name)}の代わり）` : '') : esc(names(s.approver_ids))));
+  cells.push(cell('申請者', hk(r.owner_id, r.created_at, false), esc(owner.name)));
+  const kv = [
+    ['件名', `<b>${esc(r.title)}</b>`], ['種類', esc(r.type_name)],
+    ['申請者', `${esc(owner.name)}（${esc(owner.dept)}・${esc(titleOf(owner))}）${r.filer_id !== r.owner_id ? `　${esc(P(r.filer_id).name)}が代わりに申請` : ''}`],
+    ...(r.amount != null && t?.use_amount ? [['金額', `<b>${yen(r.amount)}</b>`]] : []),
+    ...(r.details || []).map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    [esc(t?.body_label || '内容'), `<span class="pre">${esc(r.body || '')}</span>`],
+    ['添付書類', filesOf(r.id).length ? filesOf(r.id).map(f => esc(f.name)).join('、') : 'なし'],
+    ['状況', `${STL[r.status] || ''}${decidedAt(r) ? `（${fmtAt(decidedAt(r))} 決裁）` : ''}`],
+  ];
+  const cm = logOf(r.id).filter(l => l.comment);
+  const d = new Date(Date.parse(r.created_at)); const dd = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric' }).format(d);
+  return `<section class="printdoc" aria-hidden="true">
+    <div class="pdtop"><div class="pdno">申請番号 ${no(r)}<br>申請日 ${dd}</div></div>
+    <div class="pdtitle">稟 議 書</div>
+    <table class="pstamp"><tr>${cells.join('')}</tr></table>
+    <table class="pkv">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+    ${cm.length ? `<div class="pdh2">意見・コメント</div><ul class="pcm">${cm.map(l => `<li>${esc(l.text)}（${fmtAt(l.at)}）：「${esc(l.comment)}」</li>`).join('')}</ul>` : ''}
+    <p class="pfoot">稟議・申請（お試し版）から印刷　${new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}　※架空のデータです</p>
+  </section>`;
 }
 
 // ---- 組織図（カードを動かす看板の形）
@@ -1200,6 +1516,19 @@ function readDraft() {
 }
 
 // ---------------------------------------------------------------- 操作
+// 前の申請を写して、新しい申請の画面を開く（日にちと添付は写さない）
+function copyRingi(r) {
+  const t = T(r.type_id); if (!t || !t.in_use) { toast('この種類はいま使えません'); return; }
+  const vals = {};
+  (r.details || []).forEach(d => { const fd = (t.fields || []).find(f => f.k === d.k); if (fd && fd.kind !== 'date') vals[d.k] = d.value; });
+  S.prefill = { type: t.id, vals, body: r.body || '', title: t.use_amount ? r.title : '', amount: t.use_amount ? r.amount : null, from: r.id };
+  S.view = 'new'; S.open = null; S.edit = null; S.step = 2; S.newType = t.id; S.pick = []; S.titleTouched = !!t.use_amount; S.notesOpen = false;
+  render(); window.scrollTo({ top: 0 });
+}
+function openNew(t) {
+  S.prefill = null; S.view = 'new'; S.open = null; S.edit = null; S.step = 2; S.newType = t.id; S.pick = []; S.titleTouched = false; S.notesOpen = false;
+  render(); window.scrollTo({ top: 0 });
+}
 function go(v) { S.prefill = null; S.teamWho = null; if (v !== 'new' || S.view !== 'new') S.pick = []; if (v === 'new') S.step = 1; S.view = v; S.open = null; S.edit = null; S.notesOpen = false; S.titleTouched = false; S.moreOpen = false; render(); window.scrollTo({ top: 0 }); }
 function openR(id) {
   S.open = +id; S.edit = null; S.notesOpen = false; S.moreOpen = false;
@@ -1231,6 +1560,22 @@ document.addEventListener('click', async e => {
   const a = d.a; const r = d.id && !['selType'].includes(a) ? R(+d.id) : null;
   if (a === 'how') { S.showHow = !S.showHow; render(); return; }
   if (a === 'noop') return;
+  if (a === 'print') { window.print(); return; }
+  if (a === 'copy') { copyRingi(r); return; }
+  if (a === 'newLeave') { const lt = typeByName('有給休暇'); if (lt) openNew(lt); else toast('有給休暇の種類が見つかりません'); return; }
+  if (a === 'remind') { await rpc('remind_ringi', { p_id: r.id }, () => { const c = cur(R(r.id)); return `${c ? sanNames(c.approver_ids) : ''}に催促のお知らせを送りました`; }); return; }
+  if (a === 'qClear') { S.qs[S.view] = null; render(); return; }
+  if (a === 'csv') { downloadCsv(shownList); return; }
+  if (a === 'awayDel') { await rpc('remove_away', { p_id: +d.aw }, '留守を取り消しました。代わりの人にも知らせます'); return; }
+  if (a === 'budgetEdit') { S.budgetEdit = +d.dept; render(); setTimeout(() => $('#bgAmt')?.focus(), 0); return; }
+  if (a === 'budgetCancel') { S.budgetEdit = null; render(); return; }
+  if (a === 'budgetSave') {
+    const v = parseInt(toHalf($('#bgAmt').value).replace(/[^0-9]/g, ''), 10);
+    if (!Number.isFinite(v)) { toast('予算の金額を入れてください'); $('#bgAmt').focus(); return; }
+    const ok = await rpc('set_budget', { p_dept: +d.dept, p_amount: v }, `${deptById(+d.dept)?.name || ''}の予算を ${yen(v)} にしました`);
+    if (ok) { S.budgetEdit = null; render(); }
+    return;
+  }
   if (a === 'punch') {
     const sh = +($('#pcShift')?.value || 0) || null;
     await rpc('punch', { p_shift: sh }, x => x && x.kind === 'out' ? `退勤しました（${hmOf(Date.parse(x.at))}）。おつかれさまでした` : `出勤しました（${hmOf(Date.parse(x.at))}）`);
@@ -1326,6 +1671,18 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.id === 'lf') { doLogin($('#lfUser').value, $('#lfPw').value); return; }
   if (e.target.id === 'nf') submitForm();
+  if (e.target.id === 'sf') {
+    const q = Q();
+    Object.assign(q, { q: $('#sfQ').value.trim(), type: $('#sfType').value, min: $('#sfMin').value.trim(), max: $('#sfMax').value.trim(), from: $('#sfFrom').value, to: $('#sfTo').value });
+    render(); return;
+  }
+  if (e.target.id === 'awf') {
+    const args = { p_from: $('#awFrom').value || null, p_to: $('#awTo').value || null, p_deputy: $('#awDep').value || null, p_note: $('#awNote').value.trim() || null };
+    const who = $('#awWho')?.value; if (who) args.p_staff = who;
+    if (!args.p_from || !args.p_to) { toast('留守の日にちを入れてください'); return; }
+    if (!args.p_deputy) { toast('代わりの人を選んでください'); $('#awDep').focus(); return; }
+    rpc('set_away', args, () => `留守を入れました。${P(args.p_deputy).name}さんにお知らせが届きます`);
+  }
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'nfTitle') { S.titleTouched = true; return; }
@@ -1355,7 +1712,7 @@ setInterval(async () => {
   if (!S.me || S.busy || document.hidden || drag) return;
   try {
     await loadAll();
-    const typing = $('#nf') || $('#adm') || (document.activeElement && ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement.tagName));
+    const typing = $('#nf') || $('#adm') || $('#bgAmt') || (document.activeElement && ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement.tagName));
     if (typing) renderBell(); else render();
   } catch (_) { /* つながらないときは次の回に */ }
 }, 30000);
