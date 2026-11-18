@@ -692,7 +692,7 @@ function punchCard(compact) {
   if (st.state === 'in') {
     const sh = SH(st.w.shift_id);
     status = `<b>勤務中</b>：${st.w.day !== todayYmd() ? md(st.w.day) + ' ' : ''}${hmOf(Date.parse(st.w.in_at))} に出勤（${esc(sh?.name || '')} ${sh ? shiftTime(sh) : ''}）`;
-    ctl = `<label class="f pcshift"><span class="fl">実際に取れた休憩</span><select id="pcBreak"><option value="">決まりどおり（${sh ? sh.break_min : 60}分）</option>${[0, 15, 30, 45, 60, 90, 120].filter(m => !sh || m !== sh.break_min).map(m => `<option value="${m}">${m}分</option>`).join('')}</select></label>
+    ctl = `${!S.flowReady ? '' : `<label class="f pcshift"><span class="fl">実際に取れた休憩</span><select id="pcBreak"><option value="">決まりどおり（${sh ? sh.break_min : 60}分）</option>${[0, 15, 30, 45, 60, 90, 120].filter(m => !sh || m !== sh.break_min).map(m => `<option value="${m}">${m}分</option>`).join('')}</select></label>`}
       <button class="btn primary punchbtn out" type="button" data-a="punch">${icon('clock')}退勤する</button>`;
   } else if (st.state === 'done') {
     status = `今日は ${hmOf(Date.parse(st.w.in_at))} 出勤、${hmOf(Date.parse(st.w.out_at))} 退勤。おつかれさまでした`;
