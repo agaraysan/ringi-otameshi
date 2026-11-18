@@ -568,7 +568,142 @@ body.busy::after{content:"";position:fixed;left:0;top:0;height:4px;width:40%;z-i
 .five .bbar{flex:1;max-width:240px;margin:0}
 .five.ok .bbar .u{background:var(--ok-mark)}
 .awayt td{vertical-align:middle}
-/* 紙の稟議書（印刷のときだけ） */
+/* ---- 稟議の流れを広げる（期限・合議・回覧・購入・取り下げ） */
+.lbl.line.sm{margin-left:6px}
+.c-ttl .sub .lbl.sm{margin-left:6px}
+.stamps > div.gogi .hd span{display:inline-block;margin-left:4px;font-size:11px;font-weight:700;color:#0b5e55;background:#e6f5f3;border-radius:3px;padding:0 4px}
+.circ .infobox{margin-bottom:12px;align-items:center}
+.circ .infobox .btn{flex:none}
+.circlist{list-style:none;margin:0 0 12px;padding:0}
+.circlist li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.circlist li:last-child{border-bottom:0}
+.circlist .cn{flex:1;min-width:0;display:flex;flex-direction:column}
+.circadd{gap:8px}
+.circadd .f{flex:1 1 260px}
+.circadd select{min-height:44px}
+.bsteps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.bsteps li{display:flex;gap:8px;align-items:flex-start;padding:10px;border-radius:8px;background:var(--gray-50);min-width:0}
+.bsteps li > div{display:flex;flex-direction:column;min-width:0}
+.bsteps li .num{font-size:14px}
+.bsteps .bd{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--gray-300);display:grid;place-items:center;background:#fff}
+.bsteps .bd .ic{width:14px;height:14px;stroke-width:3}
+.bsteps li.ok,.bsteps li.done{background:var(--ok-bg)}
+.bsteps li.ok .bd,.bsteps li.done .bd{background:var(--ok-mark);border-color:var(--ok-mark);color:#fff}
+.bsteps li.now{background:var(--wait-bg);outline:2px solid var(--wait-line)}
+.bsteps li.now .bd{border-color:var(--wait)}
+.buyform{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.buyform .f{flex:1 1 180px}
+.wdcard{border-color:var(--back-line)}
+.buyt td,.ott td,.audt td{vertical-align:middle}
+.buyt td .sub,.ott td .sub{display:block}
+.ott .whowrap .sub{display:block}
+/* 時間外の合計 */
+.otrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.otrow > div{display:flex;flex-direction:column;min-width:0}
+.otrow b{font-size:22px;line-height:1.3}
+.otrow small{font-size:14px;margin-left:2px}
+.otrow .bbar{margin:6px 0 2px}
+.w-nt{white-space:nowrap;width:64px;color:#5b3f9e}
+.w-hrs small{display:block;font-size:11px}
+/* お知らせ */
+.bul .bh{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.bul .bh h2{display:flex;align-items:center;gap:6px}
+.bul .bh h2 .ic{color:var(--key)}
+.bul .bm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 12px}
+.bul .bb{margin:0 0 12px;line-height:1.8}
+.bul .bf{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.bul .bcount{display:inline-flex;align-items:center;gap:8px;font-size:14px}
+.bul .bcount .bbar{width:120px;margin:0}
+.bul.pinned{border-color:var(--blue-200)}
+.bul.toread{border-color:var(--wait-line);box-shadow:inset 4px 0 0 var(--yellow-300)}
+.bwho{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.pchip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:14px}
+button.pchip{padding:6px 12px;cursor:pointer;color:var(--link);border-color:var(--blue-200)}
+button.pchip:hover{background:var(--key-soft)}
+.oldbul summary{cursor:pointer}
+.oldbul .li{padding:10px 0;border-bottom:1px solid var(--line)}
+/* 予約 */
+.bkbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 24px;border-bottom:1px solid var(--line)}
+#bkDay{width:auto;min-height:36px;padding:4px 10px}
+#bkf.form{grid-template-columns:minmax(0,1fr);gap:18px}
+#bkf .rng input{min-width:0;flex:1}
+.bkbar b{font-size:18px;min-width:96px;text-align:center}
+.bkgrid{overflow-x:auto;padding:8px 24px 16px}
+.bkhead,.bkrow{display:grid;grid-template-columns:180px minmax(560px,1fr);gap:12px;align-items:stretch}
+.bkh{display:grid;grid-template-columns:repeat(var(--hn),1fr);font-size:12px;color:var(--fg2)}
+.bkh span{border-left:1px solid var(--line);padding-left:3px}
+.bkrow{padding:6px 0;border-bottom:1px solid var(--line)}
+.bkrow:last-child{border-bottom:0}
+.bkname{display:flex;flex-direction:column;justify-content:center;min-width:0}
+.bkname .sub{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bktrack{position:relative;display:grid;grid-template-columns:repeat(var(--hn),1fr);min-height:52px;background:#fafbfc;border-radius:6px}
+.bkslot{border:0;border-left:1px solid var(--line);background:none;cursor:pointer;min-height:52px;padding:0}
+.bkslot:hover{background:var(--key-soft)}
+.bkblock{position:absolute;top:4px;bottom:4px;border-radius:6px;border:1px solid var(--blue-300);background:var(--blue-100);color:var(--blue-1200);padding:2px 6px;text-align:left;overflow:hidden;display:flex;flex-direction:column;justify-content:center;font-size:12px;line-height:1.3;cursor:pointer}
+.bkblock b,.bkblock span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bkblock.mine{background:#e6f5f3;border-color:#9fd6cc;color:#0b4e47}
+.bkblock.sel{outline:3px solid var(--yellow-300);z-index:2}
+.bknow{position:absolute;top:0;bottom:0;width:2px;background:var(--back);z-index:1;pointer-events:none}
+.bksel{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 24px;border-top:1px solid var(--line);background:var(--wait-bg)}
+.bksel > div{display:flex;flex-direction:column}
+.rng{display:flex;align-items:center;gap:6px}
+.rng input{flex:1;min-width:0}
+/* 文書 */
+.doclist{list-style:none;margin:0;padding:0}
+.doclist li{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);cursor:pointer}
+.doclist li:last-child{border-bottom:0}
+.doclist li:hover{background:#fafbfc}
+.doclist li:hover b{color:var(--link);text-decoration:underline;text-underline-offset:3px}
+.doclist .x{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.doclist li > .ic{color:var(--fg3)}
+.doclist li > .ic:first-child{color:var(--key)}
+.docbody{line-height:1.9;max-width:860px}
+.docbody p{margin:0 0 6px}
+.docbody .dsec{font-size:17px;margin:20px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line);scroll-margin-top:80px}
+.docbody .dsec:first-child{margin-top:0}
+.docbody .chg{background:var(--yellow-50);box-shadow:-8px 0 0 var(--yellow-50),inset 3px 0 0 var(--yellow-300);padding-left:8px}
+.docbody .hit{background:var(--yellow-100);transition:background 1.5s}
+.ck{display:inline-flex;align-items:center;gap:8px;min-height:40px;font-size:15px;cursor:pointer}
+.ck input{width:20px;height:20px;accent-color:var(--key);margin:0;flex:none}
+.ck.strong{font-weight:700;margin-top:6px}
+.mono{font-family:ui-monospace,"BIZ UDGothic",Menlo,monospace;font-size:15px}
+.btn.inl{min-height:auto;padding:0 4px;vertical-align:baseline}
+/* 領収書の読み取り */
+.rcbox{display:flex;gap:14px;align-items:center;padding:16px;border-radius:12px;border:1px dashed var(--blue-300);background:var(--key-soft)}
+.rcbox > .ic{width:36px;height:36px;color:var(--key);flex:none}
+.rcbox > div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.rcbox.done{align-items:flex-start;border-style:solid;background:#fff;border-color:var(--line)}
+.rcbox.sample{border-color:var(--wait-line);background:#fffdf5}
+.rcbox img{width:96px;height:128px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:none}
+.rcx{gap:6px !important}
+.rcvals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:6px 0 0}
+.rcvals div{background:var(--gray-50);border-radius:6px;padding:6px 10px;min-width:0}
+.rcvals dt{font-size:12px;color:var(--fg2)}
+.rcvals dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--blue-200);border-top-color:var(--key);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* 規程の窓口 */
+.askform{display:flex;gap:12px;align-items:flex-end}
+.askform .f{flex:1}
+.askform textarea{min-height:64px}
+.chips.ex{margin-top:12px}
+.askans .aq{display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:17px}
+.askans .aa{display:flex;gap:10px;align-items:flex-start}
+.askans .aa > div{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.askans .aa .avt.sys{background:var(--key-soft);color:var(--key)}
+.askans .aa p{margin:0;line-height:1.85;font-size:16px}
+.askans.busy{display:flex;align-items:center;gap:14px}
+.askans.busy > div{display:flex;flex-direction:column}
+.askans.nf{border-color:var(--wait-line)}
+.arefs{display:flex;flex-direction:column;gap:6px}
+.aref{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;background:var(--gray-50)}
+.aref > div{flex:1;min-width:0;display:flex;flex-direction:column}
+.aref > .ic{color:var(--key);flex:none}
+.adept{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:#eef8f6;border:1px solid #9fd6cc}
+.adept > .ic{color:#0b5e55;flex:none;margin-top:2px}
+.adept > div{display:flex;flex-direction:column}
+/* 紙の稟議書・FAXの依頼書（印刷のときだけ） */
 .printdoc{display:none}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
@@ -825,6 +960,13 @@ body.busy::after{content:"";position:fixed;left:0;top:0;height:4px;width:40%;z-i
   .content,.main{display:block !important;padding:0 !important;margin:0 !important;max-width:none !important}
   #view > *:not(.printdoc){display:none !important}
   .printdoc{display:block;color:#000;font-family:var(--font)}
+  .printdoc.fax{display:none}
+  body.pr-fax .printdoc.pmain{display:none}
+  body.pr-fax .printdoc.fax{display:block}
+  .printdoc .faxto{font-size:14pt;font-weight:700;margin:4mm 0 2mm;border-bottom:1px solid #000;padding-bottom:1mm;display:inline-block}
+  .printdoc .faxto span{display:block;font-size:10pt;font-weight:400}
+  .printdoc .faxfrom{text-align:right;font-size:10pt;margin-bottom:4mm}
+  .printdoc.fax p{font-size:10.5pt;margin:0 0 4mm}
   .printdoc .pdtop{display:flex;justify-content:flex-end}
   .printdoc .pdno{font-size:10pt;text-align:right;line-height:1.6}
   .printdoc .pdtitle{font-weight:700;text-align:center;font-size:22pt;letter-spacing:.5em;margin:4mm 0 6mm;padding-left:.5em}
@@ -843,4 +985,18 @@ body.busy::after{content:"";position:fixed;left:0;top:0;height:4px;width:40%;z-i
   .printdoc .pdh2{font-weight:700;font-size:11pt;margin:6mm 0 2mm}
   .printdoc .pcm{margin:0;padding-left:5mm;font-size:9.5pt}
   .printdoc .pfoot{margin-top:8mm;font-size:8pt;color:#444;text-align:right}
+}
+@media (max-width:760px){
+  .bsteps{grid-template-columns:1fr 1fr}
+  .otrow{grid-template-columns:1fr 1fr}
+  .rcvals{grid-template-columns:1fr 1fr}
+  .rcbox{flex-wrap:wrap}
+  .rcbox img{width:72px;height:96px}
+  .askform{flex-direction:column;align-items:stretch}
+  .bkgrid{padding:8px 16px 12px}
+  .bkhead,.bkrow{grid-template-columns:110px minmax(520px,1fr);gap:8px}
+  .bkbar,.bksel{padding:10px 16px}
+  .doclist li{padding:12px 16px}
+  .wtable td.w-nt:not(:empty)::before{content:"深夜 ";color:var(--fg2);font-size:12px}
+  .circ .infobox{flex-wrap:wrap}
 }

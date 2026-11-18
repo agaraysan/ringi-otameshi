@@ -53,6 +53,18 @@ const ICON = {
   copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   down: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/>',
+  mega: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/>',
+  book: '<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3"/><path d="M8 7h8M8 11h6"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.4A8 8 0 1 1 21 12z"/><path d="M8.5 10.5h7M8.5 14h4"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M3 4h2l2.4 11h11.2L21 7H6.2"/>',
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  plane: '<path d="M10.5 13.5L3 11l1-2 8 1 5-5.5a2 2 0 0 1 3 3L14.5 12l1 8-2 1-2.5-7.5z"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  warn: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>',
+  pin: '<path d="M9 3h6l-1 6 4 3v2H6v-2l4-3z"/><path d="M12 14v7"/>',
 };
 const AV_COLORS = ['#2f6fdf', '#0f8a7e', '#b4541a', '#7a4fc9', '#c23b6b', '#2f7d32', '#a2700b', '#33658a'];
 function avatar(id, cls = '') {
@@ -75,8 +87,8 @@ function greet() {
   const h = +new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()) % 24;
   return h < 10 ? 'おはようございます' : h < 18 ? 'こんにちは' : 'おつかれさまです';
 }
-const GRP_ICON = { 'お金・購入': 'yen', '休み・勤務': 'cal', '行事・その他': 'star' };
-const GRP_ORDER = ['お金・購入', '休み・勤務', '行事・その他'];
+const GRP_ICON = { 'お金・購入': 'yen', '休み・勤務': 'cal', '出張・研修': 'plane', '届け出': 'doc', '行事・その他': 'star' };
+const GRP_ORDER = ['お金・購入', '休み・勤務', '出張・研修', '届け出', '行事・その他'];
 const icon = (k, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ''}</svg>`;
 const guide = h => `<div class="note">${icon('info')}<div>${h}</div></div>`;
 const pageHead = (title, sub, actions = '') => `<div class="phead"><div><h1>${title}</h1>${sub ? `<p class="psub">${sub}</p>` : ''}</div>${actions ? `<div class="pact">${actions}</div>` : ''}</div>`;
@@ -98,6 +110,9 @@ const S = {
   orgDraft: [], orgPreview: null, orgPick: null,
   files: [], pick: [], listFilter: 'wait', moreOpen: false, soumuOpen: true,
   step: 1, sel: new Set(), inboxTab: 'all',
+  signs: [], circ: [], buy: [], otHist: [], bul: [], bulReads: [], res: [], book: [], docs: [], docv: [], asks: [],
+  bookKind: '会議室', bookDay: null, bookSel: null, docOpen: null, docVer: null, docEdit: null, bulOpen: null, bulNew: false,
+  ask: null, askBusy: false, askTab: 'mine', audit: null, auditQ: '', wdOpen: false, buyFilter: 'open', otScope: 'all', receipt: null,
 };
 const P = id => S.staff.find(s => s.id === id) || { name: '（不明）', dept: '', title: '', login: '', post_title: '' };
 const titleOf = s => s.post_title || s.title;
@@ -115,9 +130,14 @@ const cur = r => r.status === 'wait' ? routeOf(r.id)[r.stage] : null;
 // 留守：今日、留守が入っている人。代わりの人は、その人の番の申請を承認・差し戻しできる（本人の申請を除く）。
 const todayAway = () => { const d = todayYmd(); return S.away.filter(a => a.from_d <= d && d <= a.to_d); };
 const awayOf = id => todayAway().find(a => a.staff_id === id);
+// 合議の段（全員の確認がそろうと次へ）で、その人がもう確認したか
+const signedBy = (r, sid) => S.signs.some(g => g.ringi_id === r.id && g.step_no === r.stage && g.staff_id === sid);
+const needSign = (r, c, sid) => c.approver_ids.includes(sid) && !(c.mode === 'all' && signedBy(r, sid));
 const proxyFor = r => { const c = cur(r); if (!c || c.approver_ids.includes(S.me.id) || isMine(r)) return null;
-  const a = todayAway().find(x => x.deputy_id === S.me.id && c.approver_ids.includes(x.staff_id)); return a ? a.staff_id : null; };
-const myTurn = r => { const c = cur(r); return !!c && (c.approver_ids.includes(S.me.id) || !!proxyFor(r)); };
+  const a = todayAway().find(x => x.deputy_id === S.me.id && needSign(r, c, x.staff_id)); return a ? a.staff_id : null; };
+const myTurn = r => { const c = cur(r); return !!c && (needSign(r, c, S.me.id) || !!proxyFor(r)); };
+// いまの段でまだ確認していない人（合議のとき）。ふつうの段は全員
+const pendingOf = (r, c) => c.mode === 'all' ? c.approver_ids.filter(x => !signedBy(r, x)) : c.approver_ids;
 const awayNote = ids => ids.map(awayOf).filter(Boolean).map(a => `${P(a.staff_id).name}さんは${md(a.to_d)}まで留守（代わり：${P(a.deputy_id).name}さん）`).join('。');
 const waitingForMe = () => S.ringi.filter(myTurn);
 const names = ids => ids.map(i => P(i).name).join('・');
@@ -178,7 +198,8 @@ const bar = (used, wait, total) => { const pc = x => total > 0 ? Math.min(100, M
 
 const proxyTargets = () => S.staff.filter(s => s.id !== S.me.id && (S.me.is_soumu || deptChain(s.dept_id).some(d => myBossDepts().includes(d))));
 
-const TABLES = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work', 'away', 'leave_grant', 'budgets'];
+const TABLES = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work', 'away', 'leave_grant', 'budgets',
+  'ringi_signs', 'ringi_circ', 'purchase', 'ot_hist', 'bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log'];
 // 画面に要るものを読む。ふだんは「まとめて読む」手続き（load_all）で1回だけたのむ。
 // Supabase に貼り直す前（手続きがまだない）ときだけ、表を3本ずつ順に読む（無料枠のサーバーの受け口があふれないように）。
 async function loadAll() {
@@ -191,6 +212,8 @@ async function loadAll() {
   }
   if (data) {
     S.filesReady = S.workReady = S.extraReady = true;
+    // 合議・回覧・購入・時間外の見張り、お知らせ・予約・文書・窓口は、今回の貼り直しのあとから
+    S.flowReady = 'ringi_signs' in data; S.boardReady = 'bulletins' in data;
   } else {
     const res = [];
     for (let i = 0; i < TABLES.length; i += 3) res.push(...await Promise.all(TABLES.slice(i, i + 3).map(t => sb.from(t).select('*'))));
@@ -200,12 +223,19 @@ async function loadAll() {
     S.filesReady = soft('ringi_files');
     S.workReady = soft('shifts', 'work');
     S.extraReady = soft('away', 'leave_grant', 'budgets');
+    S.flowReady = soft('ringi_signs', 'ringi_circ', 'purchase', 'ot_hist');
+    S.boardReady = soft('bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log');
     const bad = res.map((r, i) => r.error ? `${TABLES[i]}：${r.error.code || r.error.status || ''} ${r.error.message || ''}` : null).filter(Boolean);
     if (bad.length) throw new Error(bad.join(' ／ '));
     data = Object.fromEntries(TABLES.map((t, i) => [t, res[i].data || []]));
   }
   const g = t => data[t] || [];
-  [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work, S.away, S.leave, S.budgets] = TABLES.map(g);
+  [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work, S.away, S.leave, S.budgets,
+   S.signs, S.circ, S.buy, S.otHist, S.bul, S.bulReads, S.res, S.book, S.docs, S.docv, S.asks] = TABLES.map(g);
+  S.res.sort((a, b) => a.sort - b.sort || a.id - b.id);
+  S.docs.sort((a, b) => a.sort - b.sort || a.id - b.id);
+  S.bul.sort((a, b) => b.id - a.id);
+  S.asks.sort((a, b) => b.id - a.id);
   S.shifts.sort((a, b) => a.sort - b.sort);
   S.depts.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.posts.sort((a, b) => a.sort - b.sort || a.id - b.id);
@@ -318,17 +348,28 @@ function resolveStep(st, ownerId, filerId) {
   ids = [...new Set(ids)];
   return S.staff.filter(s => ids.includes(s.id)).map(s => s.id);
 }
-function previewRoute(typeId, amount, ownerId, filerId) {
-  let prev = null;
-  return stepsOf(typeId).map(st => {
-    const on = st.min_amount == null || (amount || 0) >= st.min_amount;
+// 金額・項目の条件に合わない段は「回らない」。となり合う合議の段は1つにまとめる（全員の確認で次へ）。
+function previewRoute(typeId, amount, ownerId, filerId, details = []) {
+  let prev = null, lastTog = null;
+  const out = [];
+  for (const st of stepsOf(typeId)) {
+    const condOn = !st.cond_key || (st.cond_vals || []).includes(((details || []).find(d => d.k === st.cond_key) || {}).value || '');
+    const on = (st.min_amount == null || (amount || 0) >= st.min_amount) && condOn;
     let ids = resolveStep(st, ownerId, filerId);
+    const item = { label: st.label, ids, on, min: st.min_amount, cond: st.cond_key ? (st.cond_vals || []).join('・') : '', all: !!st.together };
     if (on && ids.length) {
-      if (prev && prev.length === ids.length && ids.every(x => prev.includes(x))) ids = [];
-      else prev = ids;
+      if (st.together && lastTog) {
+        lastTog.ids = S.staff.filter(x => lastTog.ids.includes(x.id) || ids.includes(x.id)).map(x => x.id);
+        lastTog.label = lastTog.label.replace(/）$/, '・' + st.label + '）');
+        continue;
+      }
+      if (!st.together && prev && prev.length === ids.length && ids.every(x => prev.includes(x))) ids = item.ids = [];
+      else { prev = ids; if (st.together) item.label = `合議（${st.label}）`; }
+      lastTog = st.together && ids.length ? item : null;
     }
-    return { label: st.label, ids, on, min: st.min_amount };
-  });
+    out.push(item);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- 画面の部品
@@ -337,13 +378,14 @@ function pill(r) {
   if (r.status === 'ok') return `<span class="lbl ok">${icon('check')}決裁済み</span>`;
   if (r.status === 'back') return `<span class="lbl back">${icon('undo')}差し戻し</span>`;
   if (r.status === 'no') return `<span class="lbl no">${icon('ban')}却下</span>`;
+  if (r.status === 'wd') return `<span class="lbl no">${icon('undo')}取り下げ</span>`;
   if (myTurn(r)) return `<span class="lbl turn">${icon('inbox')}あなたの番</span>`;
   return `<span class="lbl wait">${icon('clock')}回覧中</span>`;
 }
 const DAY = 864e5;
 const waitDays = r => Math.max(0, Math.floor((Date.now() - new Date(r.updated_at).getTime()) / DAY));
 const isApprover = () => S.me.is_soumu || S.posts.some(p => p.holder_id === S.me.id) || S.route.some(x => x.approver_ids.includes(S.me.id)) || todayAway().some(a => a.deputy_id === S.me.id);
-const curText = r => { const c = cur(r); return c ? `いま ${sanNames(c.approver_ids)}の決裁待ち（${waitDays(r)}日）${awayNote(c.approver_ids) ? '。' + awayNote(c.approver_ids) : ''}` : ''; };
+const curText = r => { const c = cur(r); return c ? `いま ${sanNames(pendingOf(r, c))}の${c.mode === 'all' ? '確認' : '決裁'}待ち（${waitDays(r)}日）${awayNote(c.approver_ids) ? '。' + awayNote(c.approver_ids) : ''}` : ''; };
 const amountOf = r => r.amount != null && T(r.type_id)?.use_amount ? yen(r.amount) : '';
 const canBulk = r => myTurn(r) && !T(r.type_id)?.use_amount;
 
@@ -357,7 +399,7 @@ function rows(list, empty, opts = {}) {
     ${opts.bulk ? `<td class="c-ck">${canBulk(r) ? `<input type="checkbox" class="bk" data-id="${r.id}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="${esc(r.title)} を選ぶ">` : `<input type="checkbox" disabled title="お金のかかる申請は、1件ずつ中身を見て承認します" aria-label="まとめて承認できません">`}</td>` : ''}
     ${opts.wait ? `<td class="c-wait num ${r.status === 'wait' && wd >= 3 ? 'late' : ''}">${r.status === 'wait' ? wd + '日' : '—'}</td>` : ''}
     <td class="c-who"><span class="whowrap">${avatar(r.owner_id, 'sm')}<span>${esc(P(r.owner_id).name)}<span class="sub">${esc(P(r.owner_id).dept)}</span></span></span></td>
-    <td class="c-ttl"><span class="tlink">${esc(r.title)}</span><span class="sub">${esc(r.type_name)}${nf ? `<span class="fcount">${icon('clip')}添付 ${nf}</span>` : ''}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに申請` : ''}${opts.wait && proxyFor(r) ? `<span class="lbl info sm">${esc(P(proxyFor(r)).name)}さんの代わり</span>` : ''}</span></td>
+    <td class="c-ttl"><span class="tlink">${esc(r.title)}</span><span class="sub">${esc(r.type_name)}${dueTag(r)}${nf ? `<span class="fcount">${icon('clip')}添付 ${nf}</span>` : ''}${r.filer_id !== r.owner_id ? `・${esc(P(r.filer_id).name)}が代わりに申請` : ''}${opts.wait && proxyFor(r) ? `<span class="lbl info sm">${esc(P(proxyFor(r)).name)}さんの代わり</span>` : ''}</span></td>
     <td class="c-amt r num">${amountOf(r) || '<span class="muted">—</span>'}</td>
     <td class="c-day num"><span class="lb">申請日 </span>${fmtDay(r.created_at)}</td>
     ${opts.dec ? `<td class="c-day c-dec num">${decidedAt(r) ? `<span class="lb">決裁日 </span>${fmtDay(decidedAt(r))}` : '<span class="muted">—</span>'}</td>` : ''}
@@ -388,7 +430,10 @@ function navHtml() {
     ${S.workReady && canTeam() ? b('team', '部署の勤務', 'cal') : ''}
     ${S.extraReady && (S.me.is_soumu || S.me.is_boss) ? b('budget', '部署の予算', 'yen') : ''}
     ${b('org', '組織図', 'org')}
-    ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}` : ''}
+    ${S.boardReady ? `<div class="ngroup">病院の中</div>${b('board', 'お知らせ', 'mega', bulToRead().length ? `<span class="badge warn" title="読んでほしいお知らせ">${bulToRead().length}</span>` : '')}${b('book', '予約', 'key')}${b('docs', '文書', 'book')}${b('ask', '規程の窓口', 'chat')}` : ''}
+    ${S.flowReady && (S.me.is_soumu || S.me.is_boss) ? b('ot', '時間外の見張り', 'warn', (() => { const n = watchPeople().filter(x => otStat(x.id).level !== 'ok').length; return n ? `<span class="badge warn" title="気をつける人">${n}</span>` : ''; })()) : ''}
+    ${S.flowReady && (S.me.is_soumu || isKeiri() || isShisetsu()) ? b('buy', '購入の進み', 'cart') : ''}
+    ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}${S.flowReady ? b('audit', '監査の記録', 'shield') : ''}` : ''}
     <div class="ngroup">使い方</div>${b('howto', 'お試しの進め方', 'info')}
   </div>`;
   return main + sub;
@@ -411,6 +456,14 @@ function render() {
   if ($('#nf')) { updateForm(true); renderPick(); }
 }
 
+// お知らせの行を押したときの行き先（申請・院内のお知らせ）
+const noteAttr = n => n.ringi_id ? `data-open="${n.ringi_id}"` : /^bulletin:\d+$/.test(n.link || '') ? `data-a="goBul" data-b="${n.link.split(':')[1]}"` : '';
+// ホームに出す「回覧」と「読んでほしいお知らせ」
+function homeAlerts() {
+  const cs = myCirc(), bs = bulToRead();
+  return `${cs.length ? `<section class="alert info"><span class="ai">${icon('eye')}</span><div class="ax"><b>回覧が ${cs.length}件 届いています</b><p>${cs.slice(0, 3).map(r => esc(r.title)).join('・')}${cs.length > 3 ? ' ほか' : ''}。読んだら「見た」を押してください。</p></div><button class="btn" type="button" data-open="${cs[0].id}">見る</button></section>` : ''}
+  ${bs.length ? `<section class="alert wait"><span class="ai">${icon('mega')}</span><div class="ax"><b>読んでほしいお知らせが ${bs.length}件 あります</b><p>${bs.slice(0, 3).map(b => esc(b.title)).join('・')}</p></div><button class="btn" type="button" data-nav="board">お知らせを見る</button></section>` : ''}`;
+}
 function renderNotes() {
   const box = $('#notes'); box.hidden = !S.notesOpen;
   $('#bell').setAttribute('aria-expanded', S.notesOpen);
@@ -419,7 +472,7 @@ function renderNotes() {
   box.innerHTML = `<div class="nhead"><h2>お知らせ</h2><div class="row">
     ${S.notices.some(n => !n.is_read) ? '<button class="btn text sm" type="button" data-a="readAll">すべて読んだことにする</button>' : ''}
     <button class="btn sm" type="button" data-a="closeNotes">閉じる</button></div></div>
-  <div class="list">${ns.length ? ns.map(n => `<div class="li ${n.ringi_id ? 'click' : ''} ${n.is_read ? '' : 'unread'}" ${n.ringi_id ? `data-open="${n.ringi_id}"` : ''}><span class="ndot" aria-hidden="true"></span><div class="main"><b>${esc(n.text)}</b><div class="sub num">${fmtAt(n.at)}</div></div>${n.is_read ? '' : '<span class="lbl turn">新着</span>'}</div>`).join('') : emptyArt('お知らせはありません')}</div>
+  <div class="list">${ns.length ? ns.map(n => `<div class="li ${noteAttr(n) ? 'click' : ''} ${n.is_read ? '' : 'unread'}" ${noteAttr(n)}><span class="ndot" aria-hidden="true"></span><div class="main"><b>${esc(n.text)}</b><div class="sub num">${fmtAt(n.at)}</div></div>${n.is_read ? '' : '<span class="lbl turn">新着</span>'}</div>`).join('') : emptyArt('お知らせはありません')}</div>
   <p class="nfoot">本番では、スマホにも同じ知らせが届くようにできます（お試し版ではこの画面だけ）。</p>`;
 }
 
@@ -449,6 +502,7 @@ function inbox(withMinis) {
   ${pageHead('決裁待ち', `あなた（${esc(myPost)}）の承認を待っている申請です。待っている日数が長い順に並んでいます。`, S.extraReady ? `<button class="btn" type="button" data-nav="away">${icon('swap')}留守のときの代わり</button>` : '')}
   ${covering.map(a => `<section class="alert info"><span class="ai">${icon('swap')}</span><div class="ax"><b>${esc(P(a.staff_id).name)}さんの留守中（${md(a.to_d)}まで）、${esc(P(a.staff_id).name)}さんの決裁をあなたが代わりにできます</b><p>下の決裁待ちに「${esc(P(a.staff_id).name)}さんの代わり」として並んでいます。${a.note ? '理由：' + esc(a.note) : ''}</p></div></section>`).join('')}
   ${myAway.map(a => `<section class="alert wait"><span class="ai">${icon('cal')}</span><div class="ax"><b>${md(a.from_d)}〜${md(a.to_d)} は留守の設定です（代わり：${esc(P(a.deputy_id).name)}さん）</b><p>その間に届いた申請は、${esc(P(a.deputy_id).name)}さんも承認できます。</p></div><button class="btn" type="button" data-nav="away">変える</button></section>`).join('')}
+  ${homeAlerts()}
   ${withMinis ? punchCard(true) : ''}
   ${summary([['inbox', 'turn', '決裁待ち', all.length, 'data-a="noop"'], ['clock', 'back', '3日以上待っている', late, 'data-a="noop"'], ['check', 'ok', '今月 決裁した', doneMonth, isApprover() ? 'data-nav="done"' : '']])}
   <section class="panel flush">
@@ -463,7 +517,7 @@ function inbox(withMinis) {
     <section class="panel flush"><div class="panel-h"><h2>わたしの申請</h2><button class="btn text sm" type="button" data-nav="list">すべて見る</button></div>
       ${mine.length ? `<ul class="mini">${mine.map(r => `<li class="click" data-open="${r.id}">${pill(r)}<div class="x"><b>${esc(r.title)}</b><span>${esc(r.type_name)}・${r.status === 'wait' ? esc(curText(r)) : r.status === 'ok' ? fmtDay(decidedAt(r)) + ' 決裁' : '申請日 ' + fmtDay(r.created_at)}</span></div>${icon('chevr')}</li>`).join('')}</ul>` : emptyArt('まだ申請していません')}</section>
     <section class="panel flush"><div class="panel-h"><h2>お知らせ</h2><button class="btn text sm" type="button" data-a="openNotes">すべて見る</button></div>
-      ${S.notices.length ? `<ul class="mini">${S.notices.slice(0, 3).map(n => `<li class="${n.ringi_id ? 'click' : ''}" ${n.ringi_id ? `data-open="${n.ringi_id}"` : ''}><span class="ndot ${n.is_read ? 'read' : ''}"></span><div class="x"><b>${esc(n.text)}</b><span class="num">${fmtAt(n.at)}</span></div></li>`).join('')}</ul>` : emptyArt('お知らせはありません')}</section>
+      ${S.notices.length ? `<ul class="mini">${S.notices.slice(0, 3).map(n => `<li class="${noteAttr(n) ? 'click' : ''}" ${noteAttr(n)}><span class="ndot ${n.is_read ? 'read' : ''}"></span><div class="x"><b>${esc(n.text)}</b><span class="num">${fmtAt(n.at)}</span></div></li>`).join('')}</ul>` : emptyArt('お知らせはありません')}</section>
   </div>` : ''}`;
 }
 
@@ -478,13 +532,14 @@ function staffHome() {
   ${punchCard(true)}
   ${back.map(r => `<section class="alert back"><span class="ai">${icon('undo')}</span><div class="ax"><b>差し戻されています：${esc(r.title)}</b>
     <p>${esc(P(r.last_by).name)}さんより「${esc(r.last_comment)}」</p></div><button class="btn primary" type="button" data-open="${r.id}">直して出し直す</button></section>`).join('')}
+  ${homeAlerts()}
   ${summary([['clock', 'wait', '回覧中', going.length, 'data-nav="list" data-lf="wait"'], ['undo', 'back', '差し戻し', back.length, 'data-nav="list" data-lf="back"'], ['check', 'ok', '決裁済み', mine.filter(r => r.status === 'ok').length, 'data-nav="list" data-lf="ok"']])}
   <section class="panel flush"><div class="panel-h"><h2>回覧中の申請</h2><button class="btn text sm" type="button" data-nav="list">わたしの申請をすべて見る</button></div>
     ${going.length ? `<ul class="cards">${going.map(r => `<li class="click" data-open="${r.id}"><div class="ct">${pill(r)}<span class="sub">${esc(r.type_name)}・申請日 ${fmtDay(r.created_at)}</span></div>
       <b>${esc(r.title)}</b>${dots(r)}<span class="sub">${esc(curText(r))}</span></li>`).join('')}</ul>`
       : emptyArt('回覧中の申請はありません', '「申請する」から、有給休暇や物品購入などを出せます。')}</section>
   ${done.length ? `<section class="panel flush"><div class="panel-h"><h2>最近 決裁されたもの</h2></div><ul class="mini">${done.map(r => `<li class="click" data-open="${r.id}">${pill(r)}<div class="x"><b>${esc(r.title)}</b><span>${esc(r.type_name)}・${fmtDay(decidedAt(r))} 決裁</span></div>${icon('chevr')}</li>`).join('')}</ul></section>` : ''}
-  <section class="panel tip"><span class="ai">${icon('info')}</span><div><b>はじめての方へ</b><p class="sub" style="margin:2px 0 0">お試しの進め方（30分ほど）を見ながら、何人かの立場で試してみてください。</p></div><button class="btn" type="button" data-nav="howto">進め方を見る</button></section>`;
+  <section class="panel tip"><span class="ai">${icon('info')}</span><div><b>はじめての方へ</b><p class="sub" style="margin:2px 0 0">お試しの進め方（1時間ほど）を見ながら、何人かの立場で試してみてください。</p></div><button class="btn" type="button" data-nav="howto">進め方を見る</button></section>`;
 }
 
 VIEWS.howto = function () {
@@ -502,8 +557,17 @@ VIEWS.howto = function () {
     '<b>森事務長</b>（<code>mori</code>）で「留守の代わり」から、<b>留守の日と代わりの人（加藤看護部長）</b>を入れる。<b>加藤さん</b>（<code>kato</code>）で入ると、森さんの番の申請を<b>代わりに承認</b>できる。申請の画面から<b>紙の稟議書の形で印刷</b>もできる',
     '<b>中村さん</b>で前の申請を開き<b>「写して新しく申請」</b>を押す。物品購入では<b>部署の予算の残り</b>が出る。<b>小林さん</b>の「わたしの勤務」で<b>有給の残りと年5日の取得</b>を見る',
     '<b>総務の青木さん</b>で「組織図」を開き、<b>3階東病棟の井上師長のカードを、1階病棟の看護師長の席へ動かす</b>（2人が入れ替わる）。確定の前に、担当が変わる申請の一覧を見る',
+    '<b>前田施設課長</b>（<code>maeda</code>）で入り、「照明」の申請を<b>合議</b>として確認する（経理と施設の<b>全員の確認がそろうと</b>次へ進む）。<b>中村さん</b>で物品購入を出すと、区分や金額で<b>事務長・院長・理事長</b>の段が増えたり減ったりする',
+    '<b>岡田経理課長</b>（<code>okada</code>）で「その他」の<b>購入の進み</b>を開き、決裁された購入の<b>発注→納品→請求書→支払い</b>を進める。請求書の金額が決裁より多いと印が出る',
+    '<b>斎藤師長</b>（<code>saito</code>）で入ると、<b>回覧</b>が届いている（「見た」を押す）。<b>中村さん</b>は回覧中の自分の申請を<b>取り下げ</b>られる。期限が近い申請には「期限」の印が出る',
+    '<b>田中さん</b>（<code>tanaka</code>）で「出張 学会（大阪）」を開き、<b>業者への手配の依頼書（FAX）を印刷</b>する（印刷の画面で見るだけで大丈夫です）',
+    '<b>総務の青木さん</b>で「その他」の<b>時間外の見張り</b>を開く。上限に近い人・超えた人が上に並ぶ（医師は別の上限）。<b>監査の記録</b>では、だれが何を変えたかと、<b>書きかえられていないか</b>を確かめられる',
+    '<b>中村さん</b>で「お知らせ」を開き、年末調整のお知らせに<b>「読みました」</b>を押す。<b>青木さん</b>で入ると、<b>何人が読んだか・まだの人</b>が分かり、もう一度知らせられる',
+    '<b>だれでも</b>「予約」で会議室・公用車・機材の<b>空いている所を押して予約</b>する。重なる時間は予約できない',
+    '<b>だれでも</b>「文書」で就業規則や旅費規程を開き、<b>版を切り替えて変わった所</b>を見る。「規程の窓口」で<b>「出張のホテル代の上限は？」</b>などを聞くと、<b>根拠の箇所と担当の部署</b>が出る（いまは見本の答え）',
+    '<b>小林さん</b>で「申請する」から<b>経費の精算</b>を選び、<b>領収書を撮る</b>（どんな写真でも大丈夫）。日付・金額・支払った先が入る（いまは見本の値。AIのキーを入れると写真から読む）',
   ];
-  return `${pageHead('お試しの進め方', '30分ほどで、申請から決裁と勤怠までの流れを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
+  return `${pageHead('お試しの進め方', '1時間ほどで、申請から決裁、勤怠、お知らせ・予約・文書までを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
   <section class="panel"><ol class="steps">${steps.map(s => `<li><div>${s}</div></li>`).join('')}</ol>
   <p class="sub" style="margin:16px 0 0">何人かで同じ人に入っても大丈夫です。総務の人で入ると「種類と回る順番」の下から、見本の状態に戻せます。</p></section>`;
 };
@@ -529,11 +593,12 @@ function wkind(r) {
   if (n.startsWith('遅刻')) return 'late';
   if (n.startsWith('時間外')) return 'ot';
   if (n.startsWith('打刻の修正')) return 'fix';
+  if (['代休', '振替休日', '特別休暇'].includes(n)) return 'off';
   return null;
 }
 function reqDays(r) {
   const k = wkind(r); if (!k) return [];
-  if (k === 'leave' || k === 'absent') {
+  if (k === 'leave' || k === 'absent' || k === 'off') {
     const f = dval(r, 'from'); if (!f) return [];
     const t = dval(r, 'to') || f; const out = [];
     for (let x = f; x <= t && out.length < 62; x = addDays(x, 1)) out.push(x);
@@ -559,7 +624,12 @@ function dayInfo(sid, ymd) {
     if (fo) { let o = atOf(ymd, fo); if (inAt && o <= inAt) o += DAY; outAt = o; }
   }
   const start = sh ? atOf(ymd, sh.start_t) : null, end = sh ? atOf(ymd, sh.end_t, sh.next_day ? 1 : 0) : null;
-  const worked = inAt && outAt && sh ? Math.max(0, Math.round((outAt - inAt) / 6e4) - sh.break_min) : null;
+  const brk = w && w.break_min != null ? w.break_min : sh ? sh.break_min : 0;
+  const worked = inAt && outAt && sh ? Math.max(0, Math.round((outAt - inAt) / 6e4) - brk) : null;
+  const night = inAt && outAt ? nightMin(inAt, outAt) : 0;
+  // 前の退勤から、この出勤まで（11時間あけるのが目安）
+  const prevW = w ? S.work.filter(y => y.staff_id === sid && y.out_at && Date.parse(y.in_at) < Date.parse(w.in_at)).sort((a, b) => Date.parse(b.in_at) - Date.parse(a.in_at))[0] : null;
+  const intv = prevW && inAt ? Math.round((inAt - Date.parse(prevW.out_at)) / 6e4) : null;
   const otOk = ok('ot').reduce((a, r) => a + otLen(r), 0);
   const otWait = wait('ot').reduce((a, r) => a + otLen(r), 0);
   const over = outAt && end ? Math.max(0, Math.round((outAt - end) / 6e4)) : 0;
@@ -570,7 +640,10 @@ function dayInfo(sid, ymd) {
   if (missing) issues.push(wait('fix').length ? { k: 'fixwait', t: '打刻の修正を申請中' } : { k: 'miss', t: '退勤の打刻もれ' });
   if (over - otOk >= GAP_MIN) issues.push(otWait ? { k: 'otwait', t: `時間外 ${hmLen(over - otOk)} を申請中` } : { k: 'gap', t: `退勤が予定より ${hmLen(over - otOk)} 遅い`, mins: over - otOk });
   if (late > 0 && !ok('late').length) issues.push(wait('late').length ? { k: 'latewait', t: '遅刻届を申請中' } : { k: 'late', t: `出勤が ${hmLen(late)} 遅い`, mins: late });
-  return { ymd, w, sh, reqs, fix, inAt, outAt, start, end, worked, otOk, over, late, open, missing,
+  if (intv != null && intv > 0 && intv < 11 * 60) issues.push({ k: 'intv', t: `前の退勤から ${hmLen(intv)} しかあいていない（11時間が目安）` });
+  if (worked != null && brk < (worked > 480 ? 60 : worked > 360 ? 45 : 0)) issues.push({ k: 'brk', t: `休憩 ${brk}分（${worked > 480 ? '60' : '45'}分以上が必要）` });
+  return { ymd, w, sh, reqs, fix, inAt, outAt, start, end, worked, brk, night, intv, otOk, over, late, open, missing,
+    off: ok('off')[0], offWait: wait('off')[0],
     leave: ok('leave')[0], leaveWait: wait('leave')[0], absent: ok('absent')[0], absentWait: wait('absent')[0],
     lateOk: ok('late')[0], issues, todo: issues.filter(i => ['miss', 'gap', 'late'].includes(i.k)) };
 }
@@ -619,7 +692,8 @@ function punchCard(compact) {
   if (st.state === 'in') {
     const sh = SH(st.w.shift_id);
     status = `<b>勤務中</b>：${st.w.day !== todayYmd() ? md(st.w.day) + ' ' : ''}${hmOf(Date.parse(st.w.in_at))} に出勤（${esc(sh?.name || '')} ${sh ? shiftTime(sh) : ''}）`;
-    ctl = `<button class="btn primary punchbtn out" type="button" data-a="punch">${icon('clock')}退勤する</button>`;
+    ctl = `<label class="f pcshift"><span class="fl">実際に取れた休憩</span><select id="pcBreak"><option value="">決まりどおり（${sh ? sh.break_min : 60}分）</option>${[0, 15, 30, 45, 60, 90, 120].filter(m => !sh || m !== sh.break_min).map(m => `<option value="${m}">${m}分</option>`).join('')}</select></label>
+      <button class="btn primary punchbtn out" type="button" data-a="punch">${icon('clock')}退勤する</button>`;
   } else if (st.state === 'done') {
     status = `今日は ${hmOf(Date.parse(st.w.in_at))} 出勤、${hmOf(Date.parse(st.w.out_at))} 退勤。おつかれさまでした`;
     ctl = `<button class="btn punchbtn" type="button" disabled>今日の打刻は終わりました</button>`;
@@ -646,6 +720,8 @@ function monthTable(sid, ym, mine) {
     const tags = [];
     if (x.leave) tags.push(`<span class="lbl ok">有給 ${esc(dval(x.leave, 'how') || '1日')}</span>`);
     if (x.leaveWait) tags.push(`<span class="lbl wait">有給（申請中）</span>`);
+    if (x.off) tags.push(`<span class="lbl ok">${esc(x.off.type_name)}${x.off.type_name === '特別休暇' ? '（' + esc(dval(x.off, 'kind').replace(/\s*[0-9０-９年].*$/, '')) + '）' : ''}</span>`);
+    if (x.offWait) tags.push(`<span class="lbl wait">${esc(x.offWait.type_name)}（申請中）</span>`);
     if (x.absent) tags.push(`<span class="lbl no">欠勤</span>`);
     if (x.absentWait) tags.push(`<span class="lbl wait">欠勤届（申請中）</span>`);
     if (x.lateOk) tags.push(`<span class="lbl ok">${esc(dval(x.lateOk, 'kind') || '遅刻')}届 ${esc(dval(x.lateOk, 'time'))}</span>`);
@@ -662,13 +738,14 @@ function monthTable(sid, ym, mine) {
     const tOut = x.outAt ? `${orig(x.w && x.w.out_at ? Date.parse(x.w.out_at) : null, x.outAt)}${ymdOf(x.outAt) !== d ? '翌' : ''}${hmOf(x.outAt)}` : x.missing ? '<span class="miss">なし</span>' : '';
     return `<tr class="${fut ? 'fut' : ''} ${d === today ? 'today' : ''} ${x.todo.length ? 'todo' : ''}">
       <td class="w-day num ${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}">${+d.slice(8)}<small>（${WEEK[wd]}）</small></td>
-      <td class="w-sh">${x.sh ? esc(x.sh.name) : (x.leave || x.absent) ? '' : '<span class="muted">—</span>'}</td>
+      <td class="w-sh">${x.sh ? esc(x.sh.name) : (x.leave || x.absent || x.off) ? '' : '<span class="muted">—</span>'}</td>
       <td class="w-in num">${tIn}</td><td class="w-out num">${tOut}</td>
-      <td class="w-hrs num">${x.worked != null ? hmShort(x.worked) : ''}</td>
+      <td class="w-hrs num">${x.worked != null ? hmShort(x.worked) : ''}${x.worked != null && x.w && x.w.break_min != null ? `<small class="muted">休${x.brk}</small>` : ''}</td>
       <td class="w-ot num">${x.otOk ? hmShort(x.otOk) : ''}</td>
+      <td class="w-nt num">${x.night ? hmShort(x.night) : ''}</td>
       <td class="w-note"><div class="tags">${tags.join('')}</div>${acts ? `<div class="wacts">${acts}</div>` : ''}</td></tr>`;
   }).join('');
-  return `<div class="wtable"><table><thead><tr><th>日</th><th>勤務</th><th>出勤</th><th>退勤</th><th>働いた時間</th><th>時間外</th><th>申請・確かめること</th></tr></thead><tbody>${rowsH}</tbody></table></div>`;
+  return `<div class="wtable"><table><thead><tr><th>日</th><th>勤務</th><th>出勤</th><th>退勤</th><th>働いた時間</th><th>時間外</th><th>深夜</th><th>申請・確かめること</th></tr></thead><tbody>${rowsH}</tbody></table></div>`;
 }
 const monthNav = ym => `<div class="mnav"><button class="btn sm" type="button" data-a="mprev" aria-label="前の月">${icon('back')}前の月</button><b class="num">${monthLabel(ym)}</b><button class="btn sm" type="button" data-a="mnext" ${ym >= todayYmd().slice(0, 7) ? 'disabled' : ''} aria-label="次の月">次の月${icon('chevr')}</button></div>`;
 const hmHtml = m => m >= 60 ? `${Math.floor(m / 60)}<small>時間</small>${m % 60 ? (m % 60) + '<small>分</small>' : ''}` : `${m}<small>分</small>`;
@@ -695,8 +772,9 @@ VIEWS.work = function () {
   ${sm.todo ? guide(`<b>確かめることが ${sm.todo}件あります。</b>退勤が予定より遅い日は「時間外の事後の申請」を、打刻を忘れた日は「打刻の修正」を出してください。上長が中身を見て決めます（切り捨てはしません）。`) : ''}
   ${workSums(sm, S.extraReady ? leaveStat(S.me.id) : null)}
   ${S.extraReady ? leaveCard(leaveStat(S.me.id)) : ''}
+  ${otCard(S.me.id)}
   <section class="panel flush"><div class="panel-h"><h2>勤務の記録</h2>${monthNav(ym)}</div>${monthTable(S.me.id, ym, true)}
-  <p class="small muted pfoot">働いた時間は、休憩（日勤など60分・夜勤120分、仮の値）を差し引いた時間です。予定より ${GAP_MIN}分以上遅い退勤を「確かめること」にしています（仮の値）。</p></section>`;
+  <p class="small muted pfoot">働いた時間は、休憩（決まりは日勤など60分・夜勤120分。退勤のときに実際の休憩を入れた日はその分）を差し引いた時間です。深夜は22時〜翌5時に働いた時間（割増の対象）です。予定より ${GAP_MIN}分以上遅い退勤を「確かめること」にしています。前の退勤から11時間あいていない日と、休憩が足りない日にも印を出します（どれも仮の値）。</p></section>`;
 };
 
 VIEWS.team = function () {
@@ -718,7 +796,7 @@ VIEWS.team = function () {
       <td>${s.todo ? `<span class="lbl back">${icon('info')}${s.todo}件</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}
   </tbody></table></div>` : emptyArt('この部署の勤務の記録はまだありません')}</section>
   ${who ? `<section class="panel flush" id="teamWho"><div class="panel-h"><h2>${esc(P(who).name)}さんの勤務（${monthLabel(ym)}）</h2><button class="btn text sm" type="button" data-a="closeWho">閉じる</button></div>${monthTable(who, ym, who === S.me.id)}</section>
-    ${S.extraReady ? leaveCard(leaveStat(who), true) : ''}` : guide('名前を押すと、その人の1日ごとの記録と有給の日数が見られます。')}`;
+    ${S.extraReady ? leaveCard(leaveStat(who), true) : ''}${otCard(who)}` : guide('名前を押すと、その人の1日ごとの記録と有給の日数が見られます。')}`;
 };
 
 // 勤務の記録から、申請の画面を中身を入れた状態で開く
@@ -835,7 +913,7 @@ function searchBar(list) {
 // 一覧の下の「何件」と書き出しのボタン
 const listFoot = (n, total) => `<div class="lfoot"><span class="sub">${n === total ? `${n}件` : `${total}件のうち <b>${n}件</b> が当てはまります`}</span><span class="sp"></span>
   ${n ? `<button class="btn sm" type="button" data-a="csv">${icon('down')}Excelで開ける形で書き出す（CSV）</button>` : ''}</div>`;
-const STL = { wait: '回覧中', ok: '決裁済み', back: '差し戻し', no: '却下' };
+const STL = { wait: '回覧中', ok: '決裁済み', back: '差し戻し', no: '却下', wd: '取り下げ' };
 function downloadCsv(list) {
   const cell = v => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
   const head = ['申請番号', '種類', '件名', '申請者', '部署', '代わりに申請した人', '金額', '申請日', '状況', 'いまの段', '決裁日', '内容', '項目'];
@@ -854,11 +932,11 @@ function downloadCsv(list) {
 let shownList = [];
 const withQ = list => { const q = Q(); const out = qOn(q) ? list.filter(r => qMatch(r, q)) : list; shownList = out; return out; };
 
-const LF = [['wait', '回覧中'], ['back', '差し戻し'], ['ok', '決裁済み'], ['no', '却下'], ['all', 'すべて']];
+const LF = [['wait', '回覧中'], ['back', '差し戻し'], ['ok', '決裁済み'], ['no', '却下'], ['wd', '取り下げ'], ['all', 'すべて']];
 VIEWS.list = function () {
   const mine = S.ringi.filter(isMine);
   const m = (r, k) => k === 'all' || r.status === k;
-  const items = LF.filter(([k]) => k !== 'no' || mine.some(r => r.status === 'no'));
+  const items = LF.filter(([k]) => !['no', 'wd'].includes(k) || mine.some(r => r.status === k));
   if (!items.some(([k]) => k === S.listFilter)) S.listFilter = 'all';
   const base = mine.filter(r => m(r, S.listFilter));
   const list = withQ(base);
@@ -881,12 +959,12 @@ VIEWS.done = function () {
 VIEWS.all = function () {
   if (!S.me.is_soumu) return VIEWS.home();
   const f = S.filter;
-  const match = (r, k) => k === 'all' || (k === 'wait' && r.status === 'wait') || (k === 'ok' && r.status === 'ok') || (k === 'back' && (r.status === 'back' || r.status === 'no'));
+  const match = (r, k) => k === 'all' || (k === 'wait' && r.status === 'wait') || (k === 'ok' && r.status === 'ok') || (k === 'back' && ['back', 'no', 'wd'].includes(r.status));
   const base = S.ringi.filter(r => match(r, f));
   const list = withQ(base);
   return `${pageHead('全体の一覧', '病院全体の申請です。言葉や金額で探して、Excelで開ける形で書き出せます（台帳づくりに使えます）。')}
   ${searchBar(S.ringi)}
-  <section class="panel flush">${tabs([['all', 'すべて'], ['wait', '回覧中'], ['ok', '決裁済み'], ['back', '差し戻し・却下']].map(([k, l]) => [k, l, S.ringi.filter(r => match(r, k)).length]), f, 'data-filter')}
+  <section class="panel flush">${tabs([['all', 'すべて'], ['wait', '回覧中'], ['ok', '決裁済み'], ['back', '差し戻し・却下・取り下げ']].map(([k, l]) => [k, l, S.ringi.filter(r => match(r, k)).length]), f, 'data-filter')}
   ${rows(list, qOn(Q()) ? '条件に当てはまる申請はありません' : '当てはまる申請はありません', { wait: true, dec: true })}${listFoot(list.length, base.length)}</section>`;
 };
 
@@ -926,11 +1004,13 @@ VIEWS.new = function () {
     <div class="form">
     ${!ed && canProxy() ? `<label class="f wide" id="nfProxyWrap"><span class="fl">代わりに申請する相手</span><select id="nfProxy"><option value="">（自分の分として出す）</option>${proxyTargets().map(s => `<option value="${s.id}">${esc(s.staff_no)}　${esc(s.name)}（${esc(s.dept)}）</option>`).join('')}</select><span class="hint">本人が出せないときだけ選びます。</span></label>` : ''}
     <div class="wide" id="nfLeave"></div>
+    ${t.name === '経費の精算' && !ed && S.boardReady ? `<div class="wide" id="nfReceipt">${receiptBox()}</div>` : ''}
     <div class="wide form" id="nfFields">${(t.fields || []).map(fd => fieldInput(fd, vals[fd.k])).join('')}</div>
     <label class="f" id="nfAmountWrap"><span class="fl">金額（円）</span><input id="nfAmount" inputmode="numeric" value="${ed && ed.amount != null ? ed.amount : pf && pf.amount != null ? pf.amount : ''}" placeholder="例：98000"><span class="hint">お金がかからない場合は空のままで大丈夫です。</span></label>
     <div class="f wide" id="nfBudget"></div>
     <label class="f wide"><span class="fl">件名<span class="req">※必須</span></span><input id="nfTitle" value="${esc(ed ? ed.title : pf && pf.title ? pf.title : '')}" placeholder="例：鉛筆の購入"></label>
     <label class="f wide"><span class="fl" id="nfBodyLabel">内容</span><textarea id="nfBody" rows="4">${esc(ed ? ed.body : pf ? pf.body : '')}</textarea></label>
+    ${S.flowReady && !ed ? `<label class="f"><span class="fl">決裁の期限<span class="opt">なくても大丈夫</span></span><input id="nfDue" type="date" min="${todayYmd()}" value=""><span class="hint">この日までに決めてほしいとき。2日前から回る先の人にお知らせが届きます。</span></label>` : ''}
     <div class="f wide"><span class="fl">添付書類<span class="opt">なくても大丈夫</span></span>
       ${ed && filesOf(ed.id).length ? `<p class="hint" style="margin:0 0 6px">今の添付：${filesOf(ed.id).map(f => esc(f.name)).join('、')}（外すときは申請の画面で）</p>` : ''}
       ${!S.filesReady ? '<p class="hint" style="margin:0">添付書類は、まだ準備中です（Supabase への貼り直しが終わると使えます）。</p>' : ''}
@@ -956,7 +1036,7 @@ function typeStep(types) {
 // 確かめる画面（出す前に、入れた内容と回る順番をまとめて見せる）
 function confirmHtml() {
   const { ed, t, amount, owner, filer, details } = formState();
-  const pr = previewRoute(t.id, amount, owner, filer).filter(s => s.on && s.ids.length);
+  const pr = previewRoute(t.id, amount, owner, filer, details).filter(s => s.on && s.ids.length);
   const rowsKv = [
     ['種類', esc(t.name)],
     ['申請者', `${esc(P(owner).name)}（${esc(P(owner).dept)}）${owner !== filer ? `<span class="sub">${esc(P(filer).name)}が代わりに申請</span>` : ''}`],
@@ -964,6 +1044,7 @@ function confirmHtml() {
     ...(t.use_amount ? [['金額', amount != null ? `<b class="num">${yen(amount)}</b>` : '<span class="muted">なし</span>']] : []),
     ['件名', `<b>${esc($('#nfTitle').value.trim())}</b>`],
     ...($('#nfBody').value.trim() ? [[esc(t.body_label || '内容'), `<span class="pre">${esc($('#nfBody').value.trim())}</span>`]] : []),
+    ...($('#nfDue')?.value ? [['決裁の期限', `<span class="num">${md($('#nfDue').value)}</span>`]] : []),
     ['添付書類', S.pick.length ? S.pick.map(f => esc(f.name)).join('<br>') : (ed && filesOf(ed.id).length ? filesOf(ed.id).map(f => esc(f.name)).join('<br>') : '<span class="muted">なし</span>')],
   ];
   if (S.extraReady && t.name.startsWith('有給')) { const ls = leaveStat(owner, ed ? ed.id : null); const need = leaveDays(details);
@@ -972,7 +1053,7 @@ function confirmHtml() {
     if (bs && !bs.none) rowsKv.push([`予算の残り<br><span class="sub">${esc(P(owner).dept)}</span>`, `<span class="num">${yen(bs.after)} → 出したあと <b class="${bs.after - amount < 0 ? 'neg' : ''}">${yen(bs.after - amount)}</b></span>${bs.after - amount < 0 ? '<span class="sub neg">予算を超えます</span>' : ''}`]); }
   return `<div class="formcols"><section class="panel flush"><div class="panel-h"><h2>この内容で出します</h2></div>
     <table class="kvt">${rowsKv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
-    <aside class="panel routebox"><h2>この順番で回ります</h2>${pr.length ? `<ol class="vflow">${pr.map(s => `<li><span class="vd"></span><div><span class="sub">${esc(s.label)}</span><b>${esc(names(s.ids))}</b></div></li>`).join('')}</ol>
+    <aside class="panel routebox"><h2>この順番で回ります</h2>${pr.length ? `<ol class="vflow">${pr.map(s => `<li><span class="vd"></span><div><span class="sub">${esc(s.label)}${s.all ? '（全員が確認）' : ''}</span><b>${esc(names(s.ids))}</b></div></li>`).join('')}</ol>
     <p class="hint">${pr.length}つの段すべてで承認されると決裁です。出すと、最初の段の人にお知らせが届きます。</p>` : '<p class="hint">回る段がないため、出すとそのまま決裁になります。</p>'}</aside></div>`;
 }
 
@@ -1037,6 +1118,7 @@ function formState() {
   if (ed) { owner = ed.owner_id; filer = ed.filer_id; }
   else if (px && t.allow_proxy && px.value) owner = px.value;
   const details = (t.fields || []).map(fd => ({ k: fd.k, label: fd.label, value: ($(`#fd_${fd.k}`)?.value || '').trim() })).filter(d => d.value);
+  if (S.receipt && S.receipt.read && t.name === '経費の精算' && !ed) details.push({ k: 'ai', label: '領収書の読み取り', value: S.receipt.sample ? '見本の読み取り（AIは未接続）・本人が確かめた' : 'AIが読み取り・本人が確かめた' });
   return { ed, t, amount: Number.isFinite(amount) ? amount : null, owner, filer, details };
 }
 
@@ -1072,7 +1154,18 @@ function updateForm(first) {
       const short = need > ls.after;
       lb.innerHTML = `<div class="infobox ${short ? 'bad' : ''}">${icon('cal')}<div><b>有給の残り ${dtxt(ls.left)}日</b>${owner !== S.me.id ? `（${esc(P(owner).name)}さん）` : ''}
         <span class="sub">今年度 ${dtxt(ls.granted)}日＋繰り越し ${dtxt(ls.carried)}日のうち、使った ${dtxt(ls.taken)}日${ls.wait ? `・申請中 ${dtxt(ls.wait)}日` : ''}（${md(ls.g.to_d)}まで使えます）</span>
-        ${need ? `<span class="nx">この申請で <b>${dtxt(need)}日</b> → 出したあとの残り <b class="${short ? 'neg' : ''}">${dtxt(ls.after - need)}日</b>${short ? '　残りが足りません' : ''}</span>` : ''}</div></div>`;
+        ${need ? `<span class="nx">この申請で <b>${dtxt(need)}日</b> → 出したあとの残り <b class="${short ? 'neg' : ''}">${dtxt(ls.after - need)}日</b>${short ? '　残りが足りません' : ''}</span>` : ''}
+        ${(() => { const hs = dval({ details }, 'how') === '時間単位' ? hourlyStat(owner, ed ? ed.id : null) : null; if (!hs) return '';
+          const over = hs.used + need > 5 + 1e-9;
+          return `<span class="nx ${over ? 'neg' : ''}">時間単位で取れるのは1年で40時間（5日分）まで：今年度 ${dtxt(hs.used * 8)}時間 → この申請で ${dtxt((hs.used + need) * 8)}時間${over ? '　超えてしまいます' : ''}</span>`; })()}</div></div>`;
+    }
+    // 特別休暇：種類ごとの日数の目安（超えても出せるが、知らせる）
+    if (t.name === '特別休暇') {
+      const kind = dval({ details }, 'kind'), lim = +((/(\d+)日まで/.exec(kind) || [])[1] || 0);
+      const f = dval({ details }, 'from'), to = dval({ details }, 'to') || f;
+      const n = /^\d{4}-\d{2}-\d{2}$/.test(f) && to >= f ? Math.round((atOf(to, '12:00') - atOf(f, '12:00')) / DAY) + 1 : 0;
+      lb.innerHTML = kind ? `<div class="infobox ${lim && n > lim ? 'bad' : ''}">${icon('cal')}<div><b>${esc(kind.replace(/\s*[（(]?年?\d+日まで[）)]?/, ''))}${lim ? `は ${lim}日まで` : ''}（就業規則 第22条・仮）</b>
+        <span class="sub">有給休暇の日数は減りません。</span>${n ? `<span class="nx">この申請は <b>${n}日</b>${lim && n > lim ? `　決まった日数（${lim}日）を超えています。理由を書いてください` : ''}</span>` : ''}</div></div>` : '';
     }
   }
   // 部署の予算の残り
@@ -1089,14 +1182,14 @@ function updateForm(first) {
           ${a ? `<span class="nx">この申請 ${yen(a)} を入れると、残り <b class="${bs.after - a < 0 ? 'neg' : ''}">${yen(bs.after - a)}</b>（申請中の分も引いた額）${bs.after - a < 0 ? '<br>予算を超えます。超える理由を内容に書いてください（出すことはできます）' : ''}</span>` : ''}</div></div>`;
     }
   }
-  const pr = previewRoute(t.id, amount, owner, filer);
+  const pr = previewRoute(t.id, amount, owner, filer, details);
   const chips = pr.filter(s => !(s.on && !s.ids.length)).map(s => {
-    const cond = s.min != null ? `（${yen(s.min)}以上のとき）` : '';
-    return `<div class="chip ${s.on ? '' : 'skip'}"><span class="l">${esc(s.label)}${cond}</span><b>${s.ids.length ? esc(names(s.ids)) : '—'}</b></div>`;
+    const cond = [s.min != null ? `${yen(s.min)}以上` : '', s.cond ? `${s.cond}` : ''].filter(Boolean).join('・');
+    return `<div class="chip ${s.on ? '' : 'skip'} ${s.all ? 'all' : ''}"><span class="l">${esc(s.label)}${cond ? `（${esc(cond)}のとき）` : ''}</span><b>${s.ids.length ? esc(names(s.ids)) : '—'}</b>${s.all && s.on ? '<span class="sub">全員が確認</span>' : ''}</div>`;
   });
   $('#nfRoute').innerHTML = chips.length ? chips.join('<span class="arrow">→</span>') : '<span class="muted">回る段がありません（出すとそのまま決裁になります）</span>';
   const n = pr.filter(s => s.on && s.ids.length).length;
-  $('#nfRouteNote').innerHTML = `この順番で1段ずつ回り、${n}つの段すべてで承認されると決裁です。1つの段に何人かいるときは、どなたか1人が承認すれば次へ進みます。${pr.some(s => !s.on) ? '<br><b>点線の段は、今の金額では回りません。</b>' : ''}`;
+  $('#nfRouteNote').innerHTML = `この順番で1段ずつ回り、${n}つの段すべてで承認されると決裁です。1つの段に何人かいるときは、どなたか1人が承認すれば次へ進みます${pr.some(s => s.on && s.all) ? '（合議の段は、全員の確認がそろうと次へ）' : ''}。${pr.some(s => !s.on) ? '<br><b>点線の段は、今の金額・区分では回りません。</b>' : ''}`;
 }
 
 async function afterSubmitFiles(rid) {
@@ -1114,6 +1207,11 @@ function validateForm() {
   if (miss.length) { toast(`「${miss[0].label}」を入れてください`); $(`#fd_${miss[0].k}`)?.focus(); return false; }
   if (!$('#nfTitle').value.trim()) { toast('件名を入れてください'); $('#nfTitle').focus(); return false; }
   const { ed, owner } = formState();
+  if (S.receipt && S.receipt.read && t.name === '経費の精算' && !ed && !$('#rcOk')?.checked) { toast('読み取った内容を領収書と見比べて、「確かめました」に印を付けてください'); $('#rcOk')?.focus(); return false; }
+  if (t.name.startsWith('有給') && details.find(d => d.k === 'how')?.value === '時間単位') {
+    const hs = hourlyStat(owner, ed ? ed.id : null); const need = leaveDays(details);
+    if (hs && hs.used + need > 5 + 1e-9) { toast(`時間単位の有給は1年で5日分（40時間）までです（今年度 ${dtxt(hs.used * 8)}時間 使っているか申請中です）`); return false; }
+  }
   if (t.name.startsWith('有給') && S.extraReady) {
     const need = leaveDays(details), ls = leaveStat(owner, ed ? ed.id : null);
     if (details.find(d => d.k === 'how')?.value === '時間単位' && !need) { toast('時間単位のときは、時間を「13:00〜15:00」の形で入れてください'); $('#fd_hours')?.focus(); return false; }
@@ -1139,11 +1237,14 @@ async function submitForm() {
   }
   const args = { p_type: t.id, p_title: title, p_body: body, p_amount: amount, p_details: details };
   if (owner !== S.me.id) args.p_owner = owner;
+  if ($('#nfDue')?.value) args.p_due = $('#nfDue').value;
+  // 読み取った領収書の写真は、添付書類として付ける
+  if (S.receipt && S.receipt.file && t.name === '経費の精算' && !S.pick.includes(S.receipt.file)) S.pick.push(S.receipt.file);
   const ok = await rpc('submit_ringi', args, id => {
     const c = routeOf(id)[0];
     return c ? `申請しました。いま${c.label}（${sanNames(c.approver_ids)}）の決裁待ちです` : '申請しました。回る段がないため、そのまま決裁になりました';
   });
-  if (ok) { S.open = ok.data; S.titleTouched = false; await afterSubmitFiles(ok.data); render(); window.scrollTo({ top: 0 }); }
+  if (ok) { S.open = ok.data; S.titleTouched = false; S.receipt = null; await afterSubmitFiles(ok.data); render(); window.scrollTo({ top: 0 }); }
 }
 
 // ---- 申請の中身
@@ -1174,13 +1275,14 @@ function detail(r) {
   if (mine) {
     action = `<section class="panel actcard"><h2>${pxy ? `${esc(P(pxy).name)}さんの代わりに、あなたが決裁できます（${esc(c.label)}）` : `あなたの番です（${esc(c.label)}として）`}</h2>
     ${pxy ? `<p class="sub" style="margin:4px 0 0">${esc(P(pxy).name)}さんは ${md(awayOf(pxy).to_d)} まで留守です。承認すると、印の欄とやり取りの記録に「${esc(P(pxy).name)}の代わり」と残ります。</p>` : ''}
-    ${c.approver_ids.length > 1 ? `<p class="sub" style="margin:4px 0 0">この段は ${esc(names(c.approver_ids))} のどなたか1人が承認すると次へ進みます。</p>` : ''}
+    ${c.mode === 'all' ? `<p class="sub" style="margin:4px 0 0">この段は<b>合議</b>です。${esc(names(c.approver_ids))} の全員が確認すると次へ進みます。${c.approver_ids.some(x => signedBy(r, x)) ? `確認ずみ：${esc(names(c.approver_ids.filter(x => signedBy(r, x))))}。` : ''}</p>`
+      : c.approver_ids.length > 1 ? `<p class="sub" style="margin:4px 0 0">この段は ${esc(names(c.approver_ids))} のどなたか1人が承認すると次へ進みます。</p>` : ''}
     <label class="f" style="margin-top:14px"><span class="fl">コメント</span><textarea id="cm" rows="2" placeholder="例：見積りを2社分そろえてください"></textarea><span class="hint">承認のときはなくても大丈夫です。差し戻し・却下のときは理由を書いてください。</span></label>
-    <div class="actbar inpanel"><button class="btn primary" type="button" data-a="approve" data-id="${r.id}">${icon('check')}承認する</button><button class="btn" type="button" data-a="back" data-id="${r.id}">${icon('undo')}差し戻す</button><span class="sp"></span><button class="btn text danger" type="button" data-a="reject" data-id="${r.id}">却下する</button></div></section>`;
+    <div class="actbar inpanel"><button class="btn primary" type="button" data-a="approve" data-id="${r.id}">${icon('check')}${c.mode === 'all' ? '確認した（合議）' : '承認する'}</button><button class="btn" type="button" data-a="back" data-id="${r.id}">${icon('undo')}差し戻す</button><span class="sp"></span><button class="btn text danger" type="button" data-a="reject" data-id="${r.id}">却下する</button></div></section>`;
   } else if (c) {
-    action = `<section class="panel infocard"><p style="margin:0"><b>いま ${esc(sanNames(c.approver_ids))}の決裁待ちです</b>（${esc(c.label)}・${waitDays(r)}日）。${route.some(x => x.approver_ids.includes(S.me.id) && x.step_no > r.stage) ? 'あなたの番はこのあとです。' : ''}</p>
+    action = `<section class="panel infocard"><p style="margin:0"><b>いま ${esc(sanNames(pendingOf(r, c)))}の${c.mode === 'all' ? '確認' : '決裁'}待ちです</b>（${esc(c.label)}${c.mode === 'all' ? '・合議' : ''}・${waitDays(r)}日）。${c.mode === 'all' && c.approver_ids.some(x => signedBy(r, x)) ? `${esc(names(c.approver_ids.filter(x => signedBy(r, x))))}は確認ずみ。` : ''}${route.some(x => x.approver_ids.includes(S.me.id) && x.step_no > r.stage) ? 'あなたの番はこのあとです。' : ''}</p>
     ${awayNote(c.approver_ids) ? `<p class="sub" style="margin:6px 0 0">${icon('swap')} ${esc(awayNote(c.approver_ids))}。</p>` : ''}
-    ${isOwner ? `<p class="sub" style="margin:6px 0 0">${esc(sanNames(c.approver_ids))}の画面の「決裁待ち」に出ています。お試しで確かめるときは、ログアウトして <code>${c.approver_ids.map(i => esc(P(i).login)).join('</code> か <code>')}</code> で入り直してください。</p>` : ''}
+    ${isOwner ? `<p class="sub" style="margin:6px 0 0">${esc(sanNames(c.approver_ids))}の画面の「決裁待ち」に出ています。お試しで確かめるときは、ログアウトして <code>${pendingOf(r, c).map(i => esc(P(i).login)).join('</code> か <code>')}</code> で入り直してください。</p>` : ''}
     ${S.extraReady && (isOwner || S.me.is_soumu) ? (() => { const last = logOf(r.id).filter(l => l.action === 'remind').pop();
       const recent = last && Date.now() - Date.parse(last.at) < 12 * 36e5;
       return `<div class="row rmd"><button class="btn sm" type="button" data-a="remind" data-id="${r.id}" ${recent ? 'disabled' : ''}>${icon('bell')}催促のお知らせを送る</button>
@@ -1189,8 +1291,15 @@ function detail(r) {
     action = `<section class="alert back"><span class="ai">${icon('undo')}</span><div class="ax"><b>${esc(P(r.last_by).name)}さんから差し戻されました</b><p>「${esc(r.last_comment)}」</p></div><button class="btn primary" type="button" data-a="edit" data-id="${r.id}">直して出し直す</button></section>`;
   } else if (r.status === 'back') {
     action = `<section class="alert back"><span class="ai">${icon('undo')}</span><div class="ax"><b>申請した人（${esc(owner.name)}さん）が直して出し直すのを待っています</b><p>理由：「${esc(r.last_comment)}」</p></div></section>`;
+  } else if (r.status === 'wd') {
+    action = `<section class="alert no"><span class="ai">${icon('undo')}</span><div class="ax"><b>${esc(P(r.last_by).name)}さんが取り下げました</b>${r.last_comment ? `<p>理由：「${esc(r.last_comment)}」</p>` : '<p>決裁は要らなくなりました。</p>'}</div></section>`;
   } else if (r.status === 'no') {
     action = `<section class="alert no"><span class="ai">${icon('ban')}</span><div class="ax"><b>${esc(P(r.last_by).name)}さんが却下しました</b><p>理由：「${esc(r.last_comment)}」</p></div></section>`;
+  }
+  if (isOwner && ['wait', 'back'].includes(r.status) && S.flowReady && S.wdOpen) {
+    action += `<section class="panel wdcard"><h2>この申請を取り下げる</h2><p class="sub" style="margin:4px 0 10px">要らなくなった申請を、決裁の前に取り下げます。取り下げた申請は元に戻せません（必要なら「写して新しく申請」で出し直します）。${r.status === 'wait' ? '回っていた先の人にも知らせます。' : ''}</p>
+      <label class="f"><span class="fl">理由<span class="opt">なくても大丈夫</span></span><textarea id="wdReason" rows="2" placeholder="例：日程が変わったため"></textarea></label>
+      <div class="actbar inpanel"><button class="btn danger" type="button" data-a="withdraw" data-id="${r.id}">${icon('undo')}取り下げる</button><button class="btn" type="button" data-a="wdOpen">やめる</button></div></section>`;
   }
   const details = r.details || [];
   const kv = [
@@ -1199,6 +1308,7 @@ function detail(r) {
     ['申請者', `${esc(owner.name)}（${esc(owner.dept)}）${r.filer_id !== r.owner_id ? `<span class="sub">${esc(filer.name)}（${esc(filer.dept)}）が代わりに申請</span>` : ''}`],
     ['申請日', `<span class="num">${fmtAt(r.created_at)}</span>`],
     ['決裁日', decidedAt(r) ? `<span class="num">${fmtAt(decidedAt(r))}</span>` : '<span class="muted">—（まだ決裁されていません）</span>'],
+    ...(r.due_date ? [['決裁の期限', `<span class="num">${md(r.due_date)}</span>${dueTag(r) ? ' ' + dueTag(r) : ''}`]] : []),
     ...(r.amount != null && t?.use_amount ? [['金額', `<b class="num">${yen(r.amount)}</b>`]] : []),
     ...details.map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
     ...(r.body ? [[esc(t?.body_label || '内容'), `<span class="pre">${esc(r.body)}</span>`]] : []),
@@ -1209,8 +1319,8 @@ function detail(r) {
   const flow = `<ol class="flow">
     ${node('done', icon('send'), '申請', esc(owner.name), fmtAt(r.created_at))}
     ${route.map((s, i) => { const st = stateOf(i); return node(st, st === 'done' ? icon('check') : st === 'stop' ? '!' : i + 1,
-      esc(s.label), `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<span class="muted">（どなたか1人）</span>' : ''}`,
-      s.stamped_by ? `${fmtAt(s.stamped_at)} ${esc(P(s.stamped_by).name)}${s.proxy_for ? `（${esc(P(s.proxy_for).name)}の代わり）` : ''}` : st === 'now' ? `${waitDays(r)}日待っています${s.approver_ids.some(awayOf) ? `・${esc(s.approver_ids.filter(awayOf).map(i => P(i).name).join('・'))}は留守` : ''}` : '',
+      esc(s.label), s.mode === 'all' ? `${s.approver_ids.map(x => `${S.signs.some(g => g.ringi_id === r.id && g.step_no === s.step_no && g.staff_id === x) || s.stamped_by === x ? '✓' : ''}${esc(P(x).name)}`).join('・')}<span class="muted">（合議・全員）</span>` : `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<span class="muted">（どなたか1人）</span>' : ''}`,
+      s.mode === 'all' && s.stamped_by ? `${fmtAt(s.stamped_at)} 全員の確認がそろう` : s.stamped_by ? `${fmtAt(s.stamped_at)} ${esc(P(s.stamped_by).name)}${s.proxy_for ? `（${esc(P(s.proxy_for).name)}の代わり）` : ''}` : st === 'now' ? `${waitDays(r)}日待っています${s.approver_ids.some(awayOf) ? `・${esc(s.approver_ids.filter(awayOf).map(i => P(i).name).join('・'))}は留守` : ''}` : '',
       st === 'now' ? '<span class="lbl wait">いまの番</span>' : st === 'stop' ? `<span class="lbl back">${r.status === 'back' ? '差し戻し' : '却下'}</span>` : ''); }).join('')}
     ${node(r.status === 'ok' ? 'done fin' : 'todo fin', icon('flag'), '決裁', r.status === 'ok' ? '決裁されました' : 'すべて承認されると決裁', decidedAt(r) ? fmtAt(decidedAt(r)) : '')}
   </ol>`;
@@ -1224,10 +1334,13 @@ function detail(r) {
       <div><dt>申請日</dt><dd class="num">${fmtDay(r.created_at)}</dd></div>
       <div><dt>決裁日</dt><dd class="num">${decidedAt(r) ? fmtDay(decidedAt(r)) : '—'}</dd></div>
       ${r.amount != null && t?.use_amount ? `<div><dt>金額</dt><dd class="num big">${yen(r.amount)}</dd></div>` : ''}
+      ${r.due_date ? `<div><dt>決裁の期限</dt><dd class="num">${md(r.due_date)}</dd></div>` : ''}
     </dl>
     <div class="dacts">
       ${t && t.in_use ? `<button class="btn sm" type="button" data-a="copy" data-id="${r.id}">${icon('copy')}写して新しく申請</button>` : ''}
       <button class="btn sm" type="button" data-a="print">${icon('print')}紙の稟議書の形で印刷</button>
+      ${wantsArrange(r) && r.status === 'ok' && (S.me.is_soumu || isOwner) ? `<button class="btn sm" type="button" data-a="printFax">${icon('plane')}業者への手配の依頼書（FAX）を印刷</button>` : ''}
+      ${isOwner && ['wait', 'back'].includes(r.status) && S.flowReady ? `<button class="btn sm text danger" type="button" data-a="wdOpen" aria-expanded="${S.wdOpen}">${icon('undo')}取り下げる</button>` : ''}
     </div>
   </section>
   <section class="panel"><h2>承認の流れ</h2>${flow}</section>
@@ -1238,8 +1351,11 @@ function detail(r) {
         <table class="kvt">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
       ${budgetCard(r)}
       ${filesCard(r)}
+      ${buyCard(r)}
+      ${circCard(r)}
       <section class="panel"><h2>承認欄</h2>
-        ${route.length ? `<div class="stamps">${route.map((s, i) => `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko">${s.proxy_for ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '決裁待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${s.proxy_for ? `${esc(P(s.stamped_by).name)}<br>（${esc(P(s.proxy_for).name)}の代わり）` : `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}`}</div></div>`).join('')}</div>` : '<p class="sub" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
+        ${route.length ? `<div class="stamps">${route.map((s, i) => s.mode === 'all' ? s.approver_ids.map(x => { const g = S.signs.find(y => y.ringi_id === r.id && y.step_no === s.step_no && y.staff_id === x);
+            return `<div class="gogi"><div class="hd">${esc(s.label)}<span>合議</span></div><div class="bx ${c && i === r.stage && !g ? 'now' : ''}">${g ? `<div class="hanko">${g.by_id !== x ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(x).name.split(' ')[0])}</span><span class="d">${fmtDay(g.at)}</span><span style="font-size:10px">確認</span></div>` : c && i === r.stage ? '確認待ち' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち'}</div><div class="ft">${esc(P(x).name)}${g && g.by_id !== x ? `<br>（${esc(P(g.by_id).name)}が代わり）` : ''}</div></div>`; }).join('') : `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko">${s.proxy_for ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '決裁待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${s.proxy_for ? `${esc(P(s.stamped_by).name)}<br>（${esc(P(s.proxy_for).name)}の代わり）` : `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}`}</div></div>`).join('')}</div>` : '<p class="sub" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
       </section>
     </div>
     <aside class="dside">
@@ -1249,7 +1365,7 @@ function detail(r) {
       </ul></section>
     </aside>
   </div>
-  ${printDoc(r)}`;
+  ${printDoc(r)}${faxDoc(r)}`;
 }
 
 // 申請の画面の「予算」（お金・購入のとき）。決裁する人が、部署の予算の残りを見て判断できるように。
@@ -1276,8 +1392,10 @@ function printDoc(r) {
   const route = routeOf(r.id), t = T(r.type_id), owner = P(r.owner_id);
   const cell = (label, stamp, who) => `<td><div class="ph">${esc(label)}</div><div class="pb">${stamp}</div><div class="pw">${who}</div></td>`;
   const hk = (id, at, dai) => `<div class="hanko">${dai ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(id).name.split(' ')[0])}</span><span class="d">${fmtDay(at)}</span></div>`;
-  const cells = route.slice().reverse().map(s => cell(s.label, s.stamped_by ? hk(s.stamped_by, s.stamped_at, !!s.proxy_for) : '',
-    s.stamped_by ? esc(P(s.stamped_by).name) + (s.proxy_for ? `<br>（${esc(P(s.proxy_for).name)}の代わり）` : '') : esc(names(s.approver_ids))));
+  const cells = route.slice().reverse().flatMap(s => s.mode === 'all' ? s.approver_ids.slice().reverse().map(x => { const g = S.signs.find(y => y.ringi_id === r.id && y.step_no === s.step_no && y.staff_id === x);
+      return cell(s.label + '（合議）', g ? hk(x, g.at, g.by_id !== x) : '', esc(P(x).name)); })
+    : [cell(s.label, s.stamped_by ? hk(s.stamped_by, s.stamped_at, !!s.proxy_for) : '',
+    s.stamped_by ? esc(P(s.stamped_by).name) + (s.proxy_for ? `<br>（${esc(P(s.proxy_for).name)}の代わり）` : '') : esc(names(s.approver_ids)))]);
   cells.push(cell('申請者', hk(r.owner_id, r.created_at, false), esc(owner.name)));
   const kv = [
     ['件名', `<b>${esc(r.title)}</b>`], ['種類', esc(r.type_name)],
@@ -1290,7 +1408,7 @@ function printDoc(r) {
   ];
   const cm = logOf(r.id).filter(l => l.comment);
   const d = new Date(Date.parse(r.created_at)); const dd = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric' }).format(d);
-  return `<section class="printdoc" aria-hidden="true">
+  return `<section class="printdoc pmain" aria-hidden="true">
     <div class="pdtop"><div class="pdno">申請番号 ${no(r)}<br>申請日 ${dd}</div></div>
     <div class="pdtitle">稟 議 書</div>
     <table class="pstamp"><tr>${cells.join('')}</tr></table>
@@ -1515,6 +1633,579 @@ function readDraft() {
   });
 }
 
+// ---------------------------------------------------------------- 稟議の流れを広げる（期限・合議・回覧・購入の進み・出張の依頼書）
+const dueLeft = r => r.due_date ? Math.round((atOf(r.due_date, '12:00') - atOf(todayYmd(), '12:00')) / DAY) : null;
+function dueTag(r) {
+  if (!r.due_date || r.status !== 'wait') return '';
+  const n = dueLeft(r);
+  return n < 0 ? `<span class="lbl back sm">期限 ${md(r.due_date)} 過ぎ</span>` : n <= 2 ? `<span class="lbl wait sm">期限 ${md(r.due_date)}${n === 0 ? '（今日）' : `（あと${n}日）`}</span>` : `<span class="lbl line sm">期限 ${md(r.due_date)}</span>`;
+}
+const inDeptName = (sid, name) => P(sid).dept === name || S.posts.some(p => p.holder_id === sid && deptById(p.dept_id)?.name === name);
+const isKeiri = () => inDeptName(S.me.id, '経理課');
+const isShisetsu = () => inDeptName(S.me.id, '施設課');
+
+// 回覧（「見た」の印だけ）
+function circCard(r) {
+  if (!S.flowReady) return '';
+  const list = S.circ.filter(c => c.ringi_id === r.id).sort((a, b) => a.id - b.id);
+  const canAdd = isMine(r) || S.me.is_soumu || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id);
+  if (!list.length && !canAdd) return '';
+  const mine = list.find(c => c.staff_id === S.me.id);
+  const cand = S.staff.filter(x => !list.some(c => c.staff_id === x.id) && x.id !== r.owner_id);
+  return `<section class="panel circ" id="circ"><div class="ph2"><h2>回覧 <span class="sub">${list.filter(c => c.seen_at).length}/${list.length}人が見ました</span></h2></div>
+    <p class="sub" style="margin:4px 0 10px">決裁には加わらず、内容を知っておいてほしい人に回します。読んだら「見た」を押してもらいます。</p>
+    ${mine && !mine.seen_at ? `<div class="infobox">${icon('eye')}<div><b>この申請はあなたに回覧されています</b><span class="sub">中身を読んだら「見た」を押してください。</span></div><button class="btn primary" type="button" data-a="circSeen" data-id="${r.id}">${icon('check')}見た</button></div>` : ''}
+    ${list.length ? `<ul class="circlist">${list.map(c => `<li>${avatar(c.staff_id, 'sm')}<span class="cn">${esc(P(c.staff_id).name)}<span class="sub">${esc(P(c.staff_id).dept)}</span></span>
+      ${c.seen_at ? `<span class="lbl ok">${icon('check')}見た ${fmtAt(c.seen_at)}</span>` : '<span class="lbl wait">まだ</span>'}</li>`).join('')}</ul>` : ''}
+    ${canAdd ? `<div class="row circadd"><label class="f"><span class="vh">回覧する人</span><select id="circWho"><option value="">回覧する人を選ぶ</option>${cand.map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}・${esc(titleOf(x))}）</option>`).join('')}</select></label>
+      <button class="btn" type="button" data-a="circAdd" data-id="${r.id}">${icon('eye')}回覧に回す</button></div>` : ''}
+  </section>`;
+}
+const myCirc = () => S.flowReady ? S.circ.filter(c => c.staff_id === S.me.id && !c.seen_at).map(c => R(c.ringi_id)).filter(Boolean) : [];
+
+// 購入の進み：決裁 → 発注 → 納品 → 請求書 → 支払い
+const BUY_STEPS = [['order', '発注', 'ordered_on'], ['deliver', '納品', 'delivered_on'], ['invoice', '請求書', 'invoiced_on'], ['pay', '支払い', 'paid_on']];
+const buyOf = rid => S.buy.find(b => b.ringi_id === rid);
+const buyNext = b => BUY_STEPS.find(([, , k]) => !b[k]);
+function canBuyStep(r, step) {
+  const so = S.me.is_soumu, ke = isKeiri(), sh = isShisetsu();
+  return step === 'order' ? so || ke || sh : step === 'deliver' ? isMine(r) || so || sh : step === 'invoice' ? ke || so : step === 'pay' ? ke : false;
+}
+const buyWho = { order: '総務・経理・施設', deliver: '申請した人・総務・施設', invoice: '経理・総務', pay: '経理' };
+function buyCard(r) {
+  const b = S.flowReady ? buyOf(r.id) : null; if (!b) return '';
+  const nx = buyNext(b);
+  const by = { order: b.ordered_by, deliver: b.delivered_by, invoice: b.invoiced_by, pay: b.paid_by };
+  const sub = { order: b.vendor ? esc(b.vendor) : '', deliver: b.note ? esc(b.note) : '', invoice: b.invoice_amount ? yen(b.invoice_amount) + (r.amount != null && b.invoice_amount > r.amount ? `<span class="lbl back sm">決裁より ${yen(b.invoice_amount - r.amount)} 多い</span>` : '') : '', pay: '' };
+  const steps = [['ok', '決裁', decidedAt(r) ? fmtDay(decidedAt(r)) : '', ''], ...BUY_STEPS.map(([k, l, f]) => [b[f] ? 'done' : nx && nx[0] === k ? 'now' : 'todo', l, b[f] ? md(b[f]) : '', b[f] ? `${esc(P(by[k]).name)}${sub[k] ? '・' + sub[k] : ''}` : nx && nx[0] === k ? `${buyWho[k]}が入れます` : ''])];
+  const form = nx && canBuyStep(r, nx[0]) ? `<form class="buyform" id="buyf" data-id="${r.id}" data-step="${nx[0]}">
+    <label class="f"><span class="fl">${nx[1]}の日</span><input id="buyDate" type="date" value="${todayYmd()}"></label>
+    ${nx[0] === 'order' ? `<label class="f"><span class="fl">発注先</span><input id="buyText" value="${esc(dval(r, 'vendor'))}" placeholder="例：〇〇医科器械"></label>` : ''}
+    ${nx[0] === 'deliver' ? `<label class="f"><span class="fl">メモ<span class="opt">なくても大丈夫</span></span><input id="buyText" placeholder="例：2台とも動くのを確かめた"></label>` : ''}
+    ${nx[0] === 'invoice' ? `<label class="f"><span class="fl">請求書の金額（円）</span><input id="buyAmt" inputmode="numeric" value="${r.amount ?? ''}"></label>` : ''}
+    <button class="btn primary" type="submit">${icon('check')}${{ order: '発注した', deliver: '納品を確かめた', invoice: '請求書を確かめた', pay: '支払った' }[nx[0]]}</button></form>` : '';
+  return `<section class="panel buy"><div class="ph2"><h2>購入の進み</h2>${!nx ? '<span class="lbl ok">支払いまで終わりました</span>' : `<span class="lbl wait">つぎは${nx[1]}</span>`}</div>
+    <ol class="bsteps">${steps.map(([st, l, d, w]) => `<li class="${st}"><span class="bd">${st === 'done' || st === 'ok' ? icon('check') : ''}</span><div><b>${l}</b>${d ? `<span class="num">${d}</span>` : ''}${w ? `<span class="sub">${w}</span>` : ''}</div></li>`).join('')}</ol>
+    ${form}</section>`;
+}
+
+// 出張：業者への手配の依頼書（FAX用。印刷のときだけ出る）
+const wantsArrange = r => r.type_name === '出張の申請' && dval(r, 'arrange') === '総務から業者に手配を頼む';
+function faxDoc(r) {
+  if (!wantsArrange(r)) return '';
+  const o = P(r.owner_id);
+  const kv = [['出張する人', `${esc(o.name)}（${esc(o.dept)}・${esc(titleOf(o))}）`], ['行き先', esc(dval(r, 'dest'))], ['用件', esc(dval(r, 'purpose'))],
+    ['出発する日', esc(md(dval(r, 'from')))], ['帰る日', esc(md(dval(r, 'to')))], ['交通', esc(dval(r, 'move'))], ['宿泊', esc(dval(r, 'stay'))],
+    ['ご予算の目安', r.amount != null ? yen(r.amount) : ''], ['くわしい内容', `<span class="pre">${esc(r.body || '')}</span>`]];
+  const today = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric' }).format(new Date());
+  return `<section class="printdoc fax" aria-hidden="true">
+    <div class="pdtop"><div class="pdno">${today}<br>申請番号 ${no(r)}${decidedAt(r) ? `（${fmtDay(decidedAt(r))} 決裁）` : ''}</div></div>
+    <div class="faxto">〇〇トラベル 法人担当 御中<br><span>FAX 00-0000-0000（架空）</span></div>
+    <div class="faxfrom">〇〇病院 総務課<br>電話 00-0000-0201・FAX 00-0000-0299（架空）</div>
+    <div class="pdtitle">出張の手配のお願い</div>
+    <p>いつもお世話になっております。下記の出張について、乗り物と宿の手配をお願いいたします。見積りと予約の内容は、総務課あてにご連絡ください。</p>
+    <table class="pkv">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+    <p class="pfoot">稟議・申請（お試し版）から印刷　※架空の依頼書です。実際には送らないでください</p>
+  </section>`;
+}
+function doPrint(kind) {
+  document.body.classList.toggle('pr-fax', kind === 'fax');
+  // 印刷の画面を閉じたら元に戻す（すぐ戻ると、印刷を待たない端末で別の紙が出るため）
+  const off = () => { document.body.classList.remove('pr-fax'); window.removeEventListener('afterprint', off); };
+  window.addEventListener('afterprint', off);
+  window.print();
+}
+
+// ---------------------------------------------------------------- 勤怠の見張り（時間外の上限・深夜・勤務の間・休憩）
+// 値は一般的な法令に合わせた仮の値（データの側と同じ）。
+const OT = { month: 45 * 60, monthWarn: 36 * 60, year: 360 * 60, yearWarn: 300 * 60, special: 720 * 60, avg: 80 * 60, cap: 100 * 60, docMonthWarn: 80 * 60, docYear: 960 * 60, docYearWarn: 800 * 60 };
+const isDoc = sid => P(sid).title === '医師';
+function otMonth(sid, ym) {
+  const h = S.otHist.find(x => x.staff_id === sid && x.ym === ym);
+  return (h ? h.minutes : 0) + S.ringi.filter(r => r.owner_id === sid && r.status === 'ok' && wkind(r) === 'ot' && dval(r, 'date').startsWith(ym)).reduce((a, r) => a + otLen(r), 0);
+}
+const ymAdd = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; };
+function otStat(sid) {
+  const ym = todayYmd().slice(0, 7), fy = curFy();
+  const months = []; for (let x = `${fy}-04`; x <= ym; x = ymAdd(x, 1)) months.push([x, otMonth(sid, x)]);
+  const m = otMonth(sid, ym), prev = otMonth(sid, ymAdd(ym, -1));
+  const year = months.reduce((a, [, v]) => a + v, 0);
+  const n45 = months.filter(([, v]) => v > OT.month).length;
+  const last = [0, 1, 2, 3, 4, 5].map(i => otMonth(sid, ymAdd(ym, -i)));
+  let avg = 0, avgK = 0; for (let k = 2; k <= 6; k++) { const a = last.slice(0, k).reduce((x, y) => x + y, 0) / k; if (a > avg) { avg = a; avgK = k; } }
+  const doc = isDoc(sid);
+  const level = doc ? (m >= OT.cap || year >= OT.docYear ? 'over' : m >= OT.docMonthWarn || year >= OT.docYearWarn ? 'warn' : 'ok')
+    : (m >= OT.cap || year > OT.special || avg > OT.avg || n45 > 6 ? 'over' : m > OT.month || year > OT.year ? 'over1' : m >= OT.monthWarn || year >= OT.yearWarn ? 'warn' : 'ok');
+  return { m, prev, year, n45, avg: Math.round(avg), avgK, months, doc, level };
+}
+const OT_LV = { over: ['back', '上限を超えています'], over1: ['back', '原則の上限を超えています'], warn: ['wait', '上限に近づいています'], ok: ['ok', '範囲内'] };
+const otLimitText = st => st.doc ? '医師（A水準）：月100時間未満・年960時間（仮）' : '原則 月45時間・年360時間、特別条項 月100時間未満・2〜6か月平均80時間・年720時間、45時間超は年6回まで（仮）';
+function otCard(sid) {
+  if (!S.flowReady) return '';
+  const st = otStat(sid);
+  const mLim = st.doc ? OT.cap : OT.month, yLim = st.doc ? OT.docYear : OT.year;
+  return `<section class="panel otcard"><div class="ph2"><h2>時間外の合計</h2><span class="lbl ${OT_LV[st.level][0]}">${OT_LV[st.level][1]}</span></div>
+    <div class="otrow"><div><span class="sub">今月</span><b class="num">${hmShort(st.m)}</b>${bar(st.m, 0, mLim)}<span class="sub num">上限 ${mLim / 60}時間${st.doc ? '未満' : ''}</span></div>
+      <div><span class="sub">今年度（4月から）</span><b class="num">${hmShort(st.year)}</b>${bar(st.year, 0, yLim)}<span class="sub num">上限 ${yLim / 60}時間</span></div>
+      ${st.doc ? '' : `<div><span class="sub">45時間を超えた月</span><b class="num">${st.n45}<small>回</small></b><span class="sub">年6回まで</span></div>
+      <div><span class="sub">直近${st.avgK}か月の平均（いちばん高いもの）</span><b class="num">${hmShort(st.avg)}</b><span class="sub">80時間まで</span></div>`}</div>
+    <p class="small muted" style="margin:8px 0 0">${otLimitText(st)}。この仕組みを使う前の分（架空）と、決裁された時間外の申請を足しています。上限に近づくと、本人と上長にお知らせが届きます。</p></section>`;
+}
+// 22時〜翌5時の時間（分）
+function nightMin(a, b) {
+  if (!a || !b) return 0; let m = 0; const d0 = ymdOf(a);
+  for (let k = -1; k <= 1; k++) { const s = atOf(addDays(d0, k), '22:00'), e = s + 7 * 36e5; m += Math.max(0, Math.min(b, e) - Math.max(a, s)); }
+  return Math.round(m / 6e4);
+}
+// 時間単位の有給（1年で5日＝40時間まで）
+function hourlyStat(sid, skipId) {
+  const g = S.leave.find(x => x.staff_id === sid); if (!g) return null;
+  const used = S.ringi.filter(r => r.owner_id === sid && r.type_name.startsWith('有給') && ['ok', 'wait'].includes(r.status) && r.id !== skipId
+    && dval(r, 'how') === '時間単位' && dval(r, 'from') >= g.from_d && dval(r, 'from') <= g.to_d).reduce((a, r) => a + leaveDays(r.details), 0);
+  return { used };
+}
+const watchPeople = () => S.staff.filter(x => S.me.is_soumu || deptChain(x.dept_id).some(d => myBossDepts().includes(d)) && x.id !== S.me.id);
+VIEWS.ot = function () {
+  if (!S.flowReady || !(S.me.is_soumu || S.me.is_boss)) return VIEWS.home();
+  const order = { over: 0, over1: 1, warn: 2, ok: 3 };
+  const rowsP = watchPeople().map(x => [x, otStat(x.id)]).sort((a, b) => order[a[1].level] - order[b[1].level] || b[1].year - a[1].year);
+  const shown = S.otScope === 'all' ? rowsP : rowsP.filter(([, s]) => s.level !== 'ok');
+  const cnt = k => rowsP.filter(([, s]) => k.includes(s.level)).length;
+  return `${pageHead('時間外の見張り', `${S.me.is_soumu ? '病院の全員' : 'あなたの部署の人'}の時間外の合計です。上限を超えそうな人を早めに見つけて、仕事の分け方を見直すために使います。`)}
+  ${summary([['warn', 'back', '上限を超えている', cnt(['over', 'over1']), 'data-a="noop"', '人'], ['clock', 'wait', '上限に近い', cnt(['warn']), 'data-a="noop"', '人'], ['check', 'ok', '範囲内', cnt(['ok']), 'data-a="noop"', '人']])}
+  ${guide('上限（仮の値）：<b>原則 月45時間・年360時間</b>。特別な事情があっても<b>月100時間未満・2〜6か月の平均80時間・年720時間</b>、45時間を超えるのは<b>年6回まで</b>。<b>医師は年960時間・月100時間未満</b>（月100時間に達したら面接指導）。上限の8割を超えると、本人と上長にお知らせが届きます。')}
+  <section class="panel flush">${tabs([['all', 'すべて', rowsP.length], ['warn', '気をつける人', rowsP.filter(([, s]) => s.level !== 'ok').length]], S.otScope, 'data-ots')}
+  <div class="dtable"><table class="plain ott"><thead><tr><th>氏名</th><th class="r">今月</th><th class="r">先月</th><th class="r">2〜6か月平均（最大）</th><th class="r">今年度</th><th class="r">45時間超</th><th>状態</th></tr></thead><tbody>
+  ${shown.map(([x, s]) => `<tr class="click" data-otwho="${x.id}"><td class="whowrap">${avatar(x.id, 'sm')}<span>${esc(x.name)}<span class="sub">${esc(x.dept)}・${esc(x.title)}</span></span></td>
+    <td class="r num ${s.m > (s.doc ? OT.docMonthWarn : OT.month) ? 'neg' : ''}">${hmShort(s.m)}</td><td class="r num">${hmShort(s.prev)}</td>
+    <td class="r num ${!s.doc && s.avg > OT.avg ? 'neg' : ''}">${s.doc ? '<span class="muted">—</span>' : `${hmShort(s.avg)}<span class="sub">（${s.avgK}か月）</span>`}</td>
+    <td class="r num ${s.year > (s.doc ? OT.docYearWarn : OT.year) ? 'neg' : ''}">${hmShort(s.year)}</td><td class="r num">${s.doc ? '<span class="muted">—</span>' : s.n45 + '回'}</td>
+    <td><span class="lbl ${OT_LV[s.level][0]}">${OT_LV[s.level][1]}</span>${s.doc ? '<span class="lbl line sm">医師</span>' : ''}</td></tr>`).join('') || `<tr><td colspan="7">${emptyArt('気をつける人はいません')}</td></tr>`}
+  </tbody></table></div><p class="small muted pfoot">時間は「時間:分」。この仕組みを使う前の分（架空）と、決裁された時間外の申請を足しています。</p></section>`;
+};
+
+// ---------------------------------------------------------------- 購入の進み（一覧）
+VIEWS.buy = function () {
+  if (!S.flowReady) return VIEWS.home();
+  const all = S.buy.map(b => [b, R(b.ringi_id)]).filter(([, r]) => r).sort((a, b) => b[1].id - a[1].id);
+  const f = S.buyFilter;
+  const list = all.filter(([b]) => f === 'all' || (f === 'open' ? !b.paid_on : !!b.paid_on));
+  const cell = (b, k) => b[k] ? `<span class="num">${md(b[k])}</span>` : '<span class="muted">まだ</span>';
+  return `${pageHead('購入の進み', '決裁された物品購入の、発注・納品・請求書・支払いの進み具合です。行を押すと申請の画面で次の手続きができます。')}
+  <section class="panel flush">${tabs([['open', '進行中', all.filter(([b]) => !b.paid_on).length], ['paid', '支払い済み', all.filter(([b]) => b.paid_on).length], ['all', 'すべて', all.length]], f, 'data-buyf')}
+  ${list.length ? `<div class="dtable"><table class="plain buyt"><thead><tr><th>申請</th><th class="r">決裁の金額</th><th>発注</th><th>納品</th><th>請求書</th><th>支払い</th><th>つぎ</th></tr></thead><tbody>
+  ${list.map(([b, r]) => { const nx = buyNext(b); return `<tr class="click" data-open="${r.id}"><td><span class="tlink">${esc(r.title)}</span><span class="sub">${no(r)}・${esc(P(r.owner_id).dept)}</span></td>
+    <td class="r num">${yen(r.amount)}</td><td>${cell(b, 'ordered_on')}</td><td>${cell(b, 'delivered_on')}</td><td>${b.invoiced_on ? `<span class="num">${md(b.invoiced_on)}・${yen(b.invoice_amount)}</span>` : '<span class="muted">まだ</span>'}</td><td>${cell(b, 'paid_on')}</td>
+    <td>${nx ? `<span class="lbl wait">${nx[1]}</span><span class="sub">${buyWho[nx[0]]}</span>` : '<span class="lbl ok">終わり</span>'}</td></tr>`; }).join('')}
+  </tbody></table></div>` : emptyArt('当てはまる購入はありません')}</section>`;
+};
+
+// ---------------------------------------------------------------- 監査の記録（総務だけ）
+const TBL = { ringi: '申請', ringi_route: '回る順番・印', ringi_signs: '合議の確認', ringi_circ: '回覧', ringi_files: '添付書類', purchase: '購入の進み', away: '留守の代わり',
+  budgets: '部署の予算', ringi_types: '申請の種類', route_steps: '回る段', posts: '組織図の席', staff: '職員', work: '打刻', leave_grant: '有給の日数',
+  bulletins: 'お知らせ', resources: '予約できる物', bookings: '予約', docs: '文書', doc_versions: '文書の版', demo: 'お試し' };
+const OPL = { insert: '足した', update: '変えた', delete: '消した', reset: '最初に戻した' };
+function auditText(a) {
+  const d = a.data || {};
+  if (a.op === 'update') return Object.entries(d).filter(([k]) => !['updated_at'].includes(k)).slice(0, 4).map(([k, v]) => `${k}：${short(v?.[0])} → ${short(v?.[1])}`).join('　');
+  return ['title', 'name', 'purpose', 'label', 'text'].map(k => d[k]).find(Boolean) || (a.op === 'reset' ? `${d.by || ''}が最初の状態に戻しました` : '');
+}
+const short = v => { const t = v == null ? '（なし）' : typeof v === 'object' ? JSON.stringify(v) : String(v); return t.length > 40 ? t.slice(0, 40) + '…' : t; };
+async function loadAudit() {
+  const { data, error } = await sb.rpc('audit_list', { p_limit: 300, p_q: S.auditQ || null });
+  S.audit = error ? { error: error.message } : { list: data || [] };
+  if (S.view === 'audit' && !S.open) render();
+}
+VIEWS.audit = function () {
+  if (!S.me.is_soumu || !S.flowReady) return VIEWS.home();
+  if (!S.audit) { loadAudit(); S.audit = { loading: true }; }
+  const v = S.auditVerify;
+  return `${pageHead('監査の記録', 'だれが・いつ・何を変えたかの記録です。申請・印・予算・組織図・打刻・お知らせ・予約・文書の変更が自動で残ります。')}
+  ${guide('記録の1件1件は、前の記録とつながった「しるし（ハッシュ）」を持っています。途中のだれかが記録を書きかえると、つながりが切れるので分かります。記録は画面からも管理者からも、直したり消したりできません。')}
+  <section class="panel"><div class="row wrap">
+    <button class="btn" type="button" data-a="auVerify">${icon('shield')}書きかえられていないか確かめる</button>
+    ${v ? (v.ok ? `<span class="lbl ok">${icon('check')}${v.count}件、すべてつながっています（書きかえはありません）</span>` : v.error ? `<span class="lbl back">${esc(v.error)}</span>` : `<span class="lbl back">${icon('warn')}${v.bad_id}番の記録（${fmtAt(v.bad_at)}）から先のつながりが切れています</span>`) : ''}
+  </div></section>
+  <form class="sbar" id="auf" role="search"><label class="f sq"><span class="fl">言葉で探す</span><span class="sin">${icon('search')}<input id="auQ" value="${esc(S.auditQ)}" placeholder="名前・申請の件名・表の名前など"></span></label>
+    <div class="sbtn"><button class="btn primary" type="submit">${icon('search')}探す</button></div></form>
+  <section class="panel flush">${S.audit.loading ? '<p class="pad muted">読み込んでいます…</p>' : S.audit.error ? `<p class="pad">${esc(S.audit.error)}</p>` : S.audit.list.length ? `<div class="dtable"><table class="plain audt"><thead><tr><th>日時</th><th>だれが</th><th>何を</th><th>どうした</th><th>中身</th></tr></thead><tbody>
+    ${S.audit.list.map(a => `<tr><td class="num">${fmtAt(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(TBL[a.tbl] || a.tbl)}<span class="sub num">${esc(a.row_key || '')}</span></td><td>${esc(OPL[a.op] || a.op)}</td><td class="small">${esc(auditText(a))}</td></tr>`).join('')}
+  </tbody></table></div><p class="small muted pfoot">新しい順に300件まで。見本のデータを入れた分と「最初に戻す」の中身は記録していません（戻したこと自体は残ります）。</p>` : emptyArt('まだ記録はありません', '申請や印を押すと、ここに残ります。')}</section>`;
+};
+
+// ---------------------------------------------------------------- 院内のお知らせ（読んだ確認つき）
+const bulTargets = b => S.staff.filter(x => b.dept_id == null || deptChain(x.dept_id).includes(b.dept_id) || S.posts.some(p => p.holder_id === x.id && deptChain(p.dept_id).includes(b.dept_id)));
+const isBulTarget = b => bulTargets(b).some(x => x.id === S.me.id);
+const bulRead = (b, sid = S.me.id) => S.bulReads.find(x => x.bulletin_id === b.id && x.staff_id === sid);
+const bulLive = b => !b.closed && (!b.until_d || b.until_d >= todayYmd());
+const bulOwner = b => b.author_id === S.me.id || S.me.is_soumu;
+const bulToRead = () => S.boardReady ? S.bul.filter(b => bulLive(b) && b.need_read && b.author_id !== S.me.id && isBulTarget(b) && !bulRead(b)) : [];
+const canPost = () => S.me.is_soumu || S.me.is_boss;
+const postDepts = () => S.me.is_soumu ? S.depts.filter(d => d.parent_id != null) : S.depts.filter(d => deptChain(d.id).some(x => myBossDepts().includes(x)));
+function bulCard(b) {
+  const tg = bulTargets(b).filter(x => x.id !== b.author_id);
+  const reads = tg.filter(x => bulRead(b, x.id));
+  const mine = isBulTarget(b) && b.author_id !== S.me.id;
+  const rd = bulRead(b);
+  return `<article class="panel bul ${b.pinned ? 'pinned' : ''} ${mine && b.need_read && !rd && bulLive(b) ? 'toread' : ''}" id="bul${b.id}">
+    <div class="bh"><h2>${b.pinned ? icon('pin') : ''}${esc(b.title)}</h2>${b.need_read ? '<span class="lbl line sm">読んだ確認あり</span>' : ''}</div>
+    <div class="bm sub">${avatar(b.author_id, 'sm')}${esc(P(b.author_id).name)}（${esc(P(b.author_id).dept)}）・${fmtAt(b.created_at)}・あて：${b.dept_id ? esc(deptById(b.dept_id)?.name || '') : '全員'}${b.until_d ? `・${md(b.until_d)}まで` : ''}</div>
+    <p class="pre bb">${esc(b.body)}</p>
+    <div class="bf">
+      ${mine && b.need_read ? (rd ? `<span class="lbl ok">${icon('check')}読みました（${fmtAt(rd.at)}）</span>` : `<button class="btn primary" type="button" data-a="bulRead" data-b="${b.id}">${icon('check')}読みました</button>`) : ''}
+      ${bulOwner(b) && b.need_read ? `<span class="bcount"><b class="num">${reads.length}/${tg.length}人</b>が読みました ${bar(reads.length, 0, tg.length || 1)}</span>` : ''}
+      <span class="sp"></span>
+      ${bulOwner(b) && b.need_read && bulLive(b) ? `<button class="btn sm" type="button" data-a="bulWho" data-b="${b.id}">${S.bulOpen === b.id ? 'たたむ' : 'まだの人を見る'}</button>` : ''}
+      ${bulOwner(b) && bulLive(b) ? `<button class="btn text sm" type="button" data-a="bulClose" data-b="${b.id}">終わりにする</button>` : ''}
+    </div>
+    ${S.bulOpen === b.id && bulOwner(b) ? `<div class="bwho"><b>まだ読んでいない人（${tg.length - reads.length}人）</b>
+      <div class="chips">${tg.filter(x => !bulRead(b, x.id)).map(x => `<span class="pchip">${avatar(x.id, 'sm')}${esc(x.name)}<span class="sub">${esc(x.dept)}</span></span>`).join('') || '<span class="muted">全員が読みました</span>'}</div>
+      ${tg.length > reads.length ? `<button class="btn sm" type="button" data-a="bulRemind" data-b="${b.id}" ${b.reminded_at && Date.now() - Date.parse(b.reminded_at) < 20 * 36e5 ? 'disabled' : ''}>${icon('bell')}まだの人にもう一度知らせる</button>${b.reminded_at ? `<span class="sub">　${fmtAt(b.reminded_at)} に知らせました（1日1回まで）</span>` : ''}` : ''}</div>` : ''}
+  </article>`;
+}
+VIEWS.board = function () {
+  if (!S.boardReady) return VIEWS.home();
+  const live = S.bul.filter(bulLive).sort((a, b) => (b.pinned - a.pinned) || b.id - a.id);
+  const old = S.bul.filter(b => !bulLive(b));
+  const toRead = bulToRead().length;
+  // 読んだ確認のないお知らせは、開いたら「読んだ」にする
+  const auto = live.filter(b => !b.need_read && isBulTarget(b) && b.author_id !== S.me.id && !bulRead(b));
+  if (auto.length) setTimeout(() => auto.forEach(b => { S.bulReads.push({ bulletin_id: b.id, staff_id: S.me.id, at: new Date().toISOString() }); sb.rpc('bulletin_read', { p_id: b.id }).then(() => {}); }), 0);
+  S.notices.forEach(n => { if (n.link && auto.some(b => n.link === 'bulletin:' + b.id)) n.is_read = true; });
+  return `${pageHead('院内のお知らせ', '病院からのお知らせです。「読んだ確認あり」のものは、読んだら「読みました」を押してください。出した人は、だれが読んだかが分かります。',
+    canPost() ? `<button class="btn primary" type="button" data-a="bulNew">${icon('mega')}お知らせを出す</button>` : '')}
+  ${toRead ? guide(`<b>読んでほしいお知らせが ${toRead}件あります。</b>`) : ''}
+  ${S.bulNew && canPost() ? `<section class="panel"><h2>お知らせを出す</h2><form id="bnf" class="form" novalidate>
+    <label class="f wide"><span class="fl">題名<span class="req">※必須</span></span><input id="bnTitle" placeholder="例：防災訓練のお知らせ"></label>
+    <label class="f wide"><span class="fl">本文</span><textarea id="bnBody" rows="5"></textarea></label>
+    <label class="f"><span class="fl">あて先</span><select id="bnDept">${S.me.is_soumu ? '<option value="">全員</option>' : ''}${postDepts().map(d => `<option value="${d.id}">${esc(d.name)}${S.depts.some(x => x.parent_id === d.id) ? '（下の部署も）' : ''}</option>`).join('')}</select>${S.me.is_soumu ? '' : '<span class="hint">所属長は自分の部署にだけ出せます。全員へは総務が出します。</span>'}</label>
+    <label class="f"><span class="fl">出しておく期間<span class="opt">なくても大丈夫</span></span><input id="bnUntil" type="date" min="${todayYmd()}"><span class="hint">この日を過ぎると「終わったお知らせ」に移ります。</span></label>
+    <div class="checks wide"><label><input type="checkbox" id="bnNeed" checked> 読んだ確認をとる（「読みました」を押してもらう）</label>${S.me.is_soumu ? '<label><input type="checkbox" id="bnPin"> 上のほうに固定する</label>' : ''}</div>
+    <div class="wide row"><button class="btn primary" type="submit">${icon('send')}出す</button><button class="btn" type="button" data-a="bulNewOff">やめる</button></div>
+  </form></section>` : ''}
+  ${live.length ? live.map(bulCard).join('') : `<section class="panel">${emptyArt('いま出ているお知らせはありません')}</section>`}
+  ${old.length ? `<details class="panel oldbul"><summary><b>終わったお知らせ（${old.length}件）</b></summary>${old.map(b => `<div class="li"><div class="main"><b>${esc(b.title)}</b><div class="sub">${esc(P(b.author_id).name)}・${fmtDay(b.created_at)}</div></div></div>`).join('')}</details>` : ''}`;
+};
+
+// ---------------------------------------------------------------- 会議室・車・機材の予約
+const BK_KINDS = [['会議室', 'key'], ['車', 'plane'], ['機材', 'star']];
+const BK_H0 = 7, BK_H1 = 21;   // 表に出す時間（7時〜21時）
+const bkDay = () => S.bookDay || todayYmd();
+function bookGrid(kind, day) {
+  const rs = S.res.filter(x => x.kind === kind && x.in_use);
+  const t0 = atOf(day, `${String(BK_H0).padStart(2, '0')}:00`), t1 = atOf(day, `${BK_H1}:00`), span = t1 - t0;
+  const hours = Array.from({ length: BK_H1 - BK_H0 }, (_, i) => BK_H0 + i);
+  const now = Date.now();
+  return `<div class="bkgrid" style="--hn:${hours.length}">
+    <div class="bkhead"><span></span><div class="bkh">${hours.map(h => `<span>${h}</span>`).join('')}</div></div>
+    ${rs.map(x => { const bs = S.book.filter(b => b.resource_id === x.id && Date.parse(b.end_at) > t0 && Date.parse(b.start_at) < t1);
+      return `<div class="bkrow"><div class="bkname"><b>${esc(x.name)}</b><span class="sub">${esc(x.note)}</span></div>
+      <div class="bktrack">${hours.map(h => `<button type="button" class="bkslot" data-a="bookAt" data-res="${x.id}" data-h="${h}" aria-label="${esc(x.name)} ${h}時から予約"></button>`).join('')}
+      ${now > t0 && now < t1 && day === todayYmd() ? `<i class="bknow" style="left:${(now - t0) / span * 100}%"></i>` : ''}
+      ${bs.map(b => { const a = Math.max(Date.parse(b.start_at), t0), e = Math.min(Date.parse(b.end_at), t1);
+        return `<button type="button" class="bkblock ${b.staff_id === S.me.id ? 'mine' : ''} ${S.bookSel === b.id ? 'sel' : ''}" data-a="bookSel" data-bk="${b.id}" style="left:${(a - t0) / span * 100}%;width:${Math.max(2, (e - a) / span * 100)}%">
+          <b>${esc(b.purpose)}</b><span>${hmOf(Date.parse(b.start_at))}〜${hmOf(Date.parse(b.end_at))}・${esc(P(b.staff_id).name)}</span></button>`; }).join('')}</div></div>`; }).join('')}
+  </div>`;
+}
+const bkSpan = b => { const s = Date.parse(b.start_at), e = Date.parse(b.end_at); const sd = ymdOf(s), ed = ymdOf(e - 1);
+  return `${md(sd)} ${hmOf(s)}〜${ed !== sd ? md(ed) + ' ' : ''}${hmOf(e)}`; };
+VIEWS.book = function () {
+  if (!S.boardReady) return VIEWS.home();
+  const kind = S.bookKind, day = bkDay();
+  const wd = WEEK[new Date(`${day}T12:00:00+09:00`).getDay()];
+  const sel = S.bookSel ? S.book.find(b => b.id === S.bookSel) : null;
+  const mine = S.book.filter(b => b.staff_id === S.me.id && Date.parse(b.end_at) > Date.now()).sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  const pf = S.bookForm || {};
+  const rs = S.res.filter(x => x.kind === kind && x.in_use);
+  const canCancel = b => (b.staff_id === S.me.id || b.created_by === S.me.id || S.me.is_soumu) && Date.parse(b.end_at) > Date.now();
+  return `${pageHead('予約', '会議室・公用車・貸し出し用の機材の空きを見て、予約します。表の空いている所を押すと、その時間で予約の欄が入ります。')}
+  <section class="panel flush">${tabs(BK_KINDS.map(([k]) => [k, k === '機材' ? '機材' : k === '車' ? '公用車' : '会議室', null]), kind, 'data-bkk')}
+    <div class="bkbar"><button class="btn sm" type="button" data-a="bkPrev" aria-label="前の日">${icon('back')}</button><b class="num">${md(day)}（${wd}）</b><button class="btn sm" type="button" data-a="bkNext" aria-label="次の日">${icon('chevr')}</button>
+      <input type="date" id="bkDay" value="${day}" aria-label="日にち"><button class="btn text sm" type="button" data-a="bkToday">今日</button></div>
+    ${bookGrid(kind, day)}
+    ${sel ? `<div class="bksel"><div><b>${esc(sel.purpose)}</b><span class="sub">${esc(S.res.find(x => x.id === sel.resource_id)?.name || '')}・${bkSpan(sel)}・${esc(P(sel.staff_id).name)}（${esc(P(sel.staff_id).dept)}）</span></div>
+      <span class="sp"></span>${canCancel(sel) ? `<button class="btn sm danger" type="button" data-a="bookCancel" data-bk="${sel.id}">この予約を取り消す</button>` : ''}<button class="btn text sm" type="button" data-a="bookSel" data-bk="">閉じる</button></div>` : ''}
+  </section>
+  <div class="two">
+  <section class="panel"><h2>予約する</h2><form id="bkf" class="form" novalidate>
+    <label class="f wide"><span class="fl">${kind === '車' ? '公用車' : kind}</span><select id="bkRes">${rs.map(x => `<option value="${x.id}" ${pf.res === x.id ? 'selected' : ''}>${esc(x.name)}（${esc(x.note)}）</option>`).join('')}</select></label>
+    <label class="f"><span class="fl">使う日</span><input id="bkDate" type="date" min="${todayYmd()}" value="${pf.date || day}"></label>
+    <div class="f"><span class="fl">時間</span><span class="rng"><input id="bkFrom" type="time" step="900" value="${pf.from || '10:00'}" aria-label="始まり">〜<input id="bkTo" type="time" step="900" value="${pf.to || '11:00'}" aria-label="終わり"></span></div>
+    ${kind !== '会議室' ? `<label class="f"><span class="fl">返す日<span class="opt">同じ日なら空のまま</span></span><input id="bkToDate" type="date" min="${todayYmd()}" value="${pf.toDate || ''}"></label>` : ''}
+    <label class="f wide"><span class="fl">${kind === '車' ? '行き先・用件' : '使い道（会議の名前など）'}<span class="req">※必須</span></span><input id="bkPurpose" value="${esc(pf.purpose || '')}" placeholder="${kind === '車' ? '例：市役所へ書類を届ける' : '例：委員会'}"></label>
+    ${S.me.is_soumu ? `<label class="f wide"><span class="fl">予約する人</span><select id="bkFor"><option value="">自分（${esc(S.me.name)}）</option>${S.staff.filter(x => x.id !== S.me.id).map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}）</option>`).join('')}</select></label>` : ''}
+    <div class="wide"><button class="btn primary" type="submit">${icon('check')}予約する</button></div>
+    ${kind === '車' ? '<p class="hint wide">公用車は、出る前にアルコールチェックを受け、戻ったら運転日誌を書きます（「文書」の「会議室・公用車の使い方」）。</p>' : ''}
+  </form></section>
+  <section class="panel flush"><div class="panel-h"><h2>わたしの予約</h2></div>
+    ${mine.length ? `<ul class="mini">${mine.map(b => `<li><div class="x"><b>${esc(b.purpose)}</b><span class="num">${esc(S.res.find(x => x.id === b.resource_id)?.name || '')}・${bkSpan(b)}</span></div><button class="btn sm" type="button" data-a="bookCancel" data-bk="${b.id}">取り消す</button></li>`).join('')}</ul>` : emptyArt('これからの予約はありません')}
+  </section></div>`;
+};
+
+// ---------------------------------------------------------------- 文書の管理（規程・マニュアル）
+const docVers = id => S.docv.filter(v => v.doc_id === id).sort((a, b) => b.ver - a.ver);
+const docLive = id => docVers(id).find(v => v.effective_d <= todayYmd());
+const docNext = id => docVers(id).filter(v => v.effective_d > todayYmd()).pop();
+const canEditDoc = d => S.me.is_soumu || (d.dept_id && (S.me.dept_id === d.dept_id || S.posts.some(p => p.holder_id === S.me.id && p.dept_id === d.dept_id)));
+const isHead = ln => /^\s*(第[0-9０-９一二三四五六七八九十百]+条|■)/.test(ln);
+function docBody(body, prevBody, mark) {
+  const prev = new Set((prevBody || '').split('\n').map(x => x.trim()));
+  return body.trim().split('\n').map(ln => {
+    const chg = mark && prevBody != null && ln.trim() && !prev.has(ln.trim());
+    if (isHead(ln)) { const h = ln.replace(/^\s*■\s*/, '').trim(); return `<h3 class="dsec ${chg ? 'chg' : ''}" id="sec-${encodeURIComponent(h)}">${esc(h)}</h3>`; }
+    return ln.trim() ? `<p class="${chg ? 'chg' : ''}">${esc(ln.trim())}</p>` : '';
+  }).join('');
+}
+const verLabel = (v, id) => `第${v.ver}版（${v.effective_d.replace(/-/g, '/')}から${v === docLive(id) ? '・いま使う版' : v.effective_d > todayYmd() ? '・これからの版' : '・古い版'}）`;
+VIEWS.docs = function () {
+  if (!S.boardReady) return VIEWS.home();
+  if (S.docEdit) return docEditView();
+  if (S.docOpen) return docView(S.docs.find(d => d.id === S.docOpen));
+  const cats = [...new Set(S.docs.map(d => d.category))];
+  return `${pageHead('文書', '規程・マニュアル・手引きの、いま使う版です。直すと新しい版として残り、古い版もあとから見られます。', S.me.is_soumu ? `<button class="btn" type="button" data-a="docNew">${icon('new')}文書を足す</button>` : '')}
+  ${guide(`わからないことは<button class="btn text sm inl" type="button" data-nav="ask">${icon('chat')}規程の窓口</button>で聞けます。ここの文書をもとに答えて、くわしい担当の部署を案内します。`)}
+  ${cats.map(c => `<section class="panel flush"><div class="panel-h"><h2>${esc(c)}</h2></div><ul class="doclist">
+    ${S.docs.filter(d => d.category === c).map(d => { const v = docLive(d.id), nx = docNext(d.id);
+      return `<li class="click" data-a="docOpen" data-doc="${d.id}">${icon('book')}<div class="x"><b>${esc(d.title)}</b><span class="sub">担当：${esc(deptById(d.dept_id)?.name || '—')}・${v ? `第${v.ver}版（${v.effective_d.replace(/-/g, '/')}から）` : 'まだ使い始めていません'}${docVers(d.id).length > 1 ? `・古い版も ${docVers(d.id).filter(x => x !== v && x !== nx).length}つ` : ''}</span>
+        ${nx ? `<span class="lbl wait sm">${md(nx.effective_d)}から第${nx.ver}版</span>` : ''}</div>${icon('chevr')}</li>`; }).join('')}</ul></section>`).join('') || `<section class="panel">${emptyArt('文書はまだありません')}</section>`}`;
+};
+function docView(d) {
+  if (!d) { S.docOpen = null; return VIEWS.docs(); }
+  const vs = docVers(d.id), live = docLive(d.id);
+  const v = vs.find(x => x.id === S.docVer) || live || vs[0];
+  const prev = vs.find(x => x.ver === v.ver - 1);
+  const mark = S.docMark !== false;
+  return `<div class="crumb"><button class="btn text sm" type="button" data-a="docBack">${icon('back')}文書の一覧へ</button></div>
+  ${pageHead(esc(d.title), `${esc(d.category)}・担当：${esc(deptById(d.dept_id)?.name || '—')}`, canEditDoc(d) ? `<button class="btn" type="button" data-a="docEdit" data-doc="${d.id}">${icon('doc')}直す（新しい版を作る）</button>` : '')}
+  <section class="panel"><div class="row wrap"><label class="f"><span class="fl">版</span><select id="docVer">${vs.map(x => `<option value="${x.id}" ${x.id === v.id ? 'selected' : ''}>${esc(verLabel(x, d.id))}</option>`).join('')}</select></label>
+    ${prev ? `<label class="ck"><input type="checkbox" id="docMark" ${mark ? 'checked' : ''}> 第${prev.ver}版から変わった所に色をつける</label>` : ''}</div>
+    ${v !== live ? `<div class="infobox ${v.effective_d > todayYmd() ? '' : 'bad'}">${icon('info')}<div><b>${v.effective_d > todayYmd() ? `これからの版です（${md(v.effective_d)}から使います）` : 'この版は古い版です'}</b><span class="sub">${live ? `いま使うのは第${live.ver}版です。` : ''}</span></div>${live ? `<button class="btn sm" type="button" data-a="docVerLive">いまの版を見る</button>` : ''}</div>` : ''}
+    ${v.note ? `<p class="sub">この版で変えたこと：${esc(v.note)}（${fmtDay(v.created_at)}）</p>` : ''}
+  </section>
+  <section class="panel docbody">${docBody(v.body, prev ? prev.body : null, mark && !!prev)}</section>`;
+}
+function docEditView() {
+  const d = S.docEdit === 'new' ? null : S.docs.find(x => x.id === S.docEdit);
+  const v = d ? (docVers(d.id)[0]) : null;
+  return `<div class="crumb"><button class="btn text sm" type="button" data-a="docEditOff">${icon('back')}やめる</button></div>
+  ${pageHead(d ? `「${esc(d.title)}」を直す` : '文書を足す', d ? `直して保存すると、第${(v?.ver || 0) + 1}版として足されます。今の版は古い版として残ります。` : '新しい文書を足します。')}
+  <section class="panel"><form id="dcf" class="form" novalidate>
+    ${d ? '' : `<label class="f wide"><span class="fl">文書の名前<span class="req">※必須</span></span><input id="dcTitle" placeholder="例：育児・介護休業規程"></label>
+    <label class="f"><span class="fl">種類</span><select id="dcCat"><option>規程</option><option>マニュアル</option><option>手引き・様式</option></select></label>
+    <label class="f"><span class="fl">担当の部署</span><select id="dcDept">${S.depts.filter(x => x.parent_id != null).map(x => `<option value="${x.id}" ${x.is_soumu ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`}
+    <label class="f wide"><span class="fl">本文<span class="req">※必須</span></span><textarea id="dcBody" rows="18" class="mono">${esc(v ? v.body.trim() : '第1条（目的）\n')}</textarea><span class="hint">「第1条（目的）」や「■ 見出し」で始まる行が見出しになります。規程の窓口は、この見出しごとに答えの箇所を示します。</span></label>
+    <label class="f wide"><span class="fl">何を変えたか${d ? '<span class="req">※必須</span>' : ''}</span><input id="dcNote" placeholder="例：宿泊費の上限を見直しました"></label>
+    <label class="f"><span class="fl">使い始める日</span><input id="dcEff" type="date" value="${todayYmd()}"><span class="hint">先の日にすると、その日までは今の版のままです。</span></label>
+    ${S.me.is_soumu ? '<div class="checks"><label><input type="checkbox" id="dcAnn"> 全員にお知らせを出す（読んだ確認つき）</label></div>' : ''}
+    <div class="wide row"><button class="btn primary" type="submit">${icon('check')}保存する</button><button class="btn" type="button" data-a="docEditOff">やめる</button></div>
+  </form></section>`;
+}
+
+// ---------------------------------------------------------------- AIの窓口（領収書の読み取り・規程の問い合わせ）
+// AI（Claude）は Supabase の Edge Function「ai」を通して呼ぶ。キーは Supabase の中だけにある。
+// まだ置いていない・キーがないときは、見本の答えで動く。
+async function aiCall(body) {
+  if (S.aiMode === 'sample') return { sample: true };
+  try {
+    const { data, error } = await sb.functions.invoke('ai', { body });
+    if (error) {
+      let msg = null;
+      try { const j = await error.context?.json?.(); msg = j?.error || null; } catch (_) { /* 読めない */ }
+      if (msg && error.context?.status !== 404) return { error: msg };
+      S.aiMode = 'sample'; return { sample: true };
+    }
+    if (!data || data.sample) { S.aiMode = 'sample'; return { sample: true }; }
+    S.aiMode = 'ai'; return data;
+  } catch (_) { S.aiMode = 'sample'; return { sample: true }; }
+}
+const aiBadge = () => S.aiMode === 'ai' ? `<span class="lbl info sm">${icon('spark')}AI（Claude）</span>` : `<span class="lbl line sm">${icon('spark')}見本で動いています</span>`;
+
+// 写真を小さくして送る（長い辺 1568px・JPEG）
+async function shrinkImage(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1568 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', 0.85);
+    return { b64: url.split(',')[1], type: 'image/jpeg', url };
+  } catch (_) {
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 4.5 * 1024 * 1024) return null;
+    const url = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(file); });
+    return { b64: String(url).split(',')[1], type: file.type, url };
+  }
+}
+const SAMPLE_RECEIPT = () => ({ is_receipt: true, date: todayYmd(-1), amount: 1980, payee: '〇〇文具店（見本）', category: '消耗品の立て替え', items: 'ボールペン・付箋（見本）', note: '' });
+function receiptBox() {
+  const rc = S.receipt;
+  if (!rc) return `<div class="rcbox">${icon('camera')}<div><b>領収書を撮って読み取る</b><span class="sub">写真から、使った日・金額・支払った先をAIが読み取って、下の欄に入れます。読み取った内容は、必ず領収書と見比べて確かめてください。写真はそのまま添付書類になります。</span></div>
+    <label class="btn primary filebtn">${icon('camera')}<span>領収書を撮る・選ぶ</span><input type="file" id="rcFile" accept="image/*" capture="environment"></label></div>`;
+  if (rc.busy) return `<div class="rcbox busy"><span class="spin" aria-hidden="true"></span><div><b>読み取っています…</b><span class="sub">数秒かかります。</span></div></div>`;
+  const v = rc.v || {};
+  return `<div class="rcbox done ${rc.sample ? 'sample' : ''}">${rc.url ? `<img src="${rc.url}" alt="撮った領収書">` : icon('img')}
+    <div class="rcx"><div class="row wrap"><b>${rc.sample ? '見本の値を入れました' : '読み取った内容を入れました'}</b>${aiBadge()}</div>
+      ${rc.sample ? '<span class="sub">いまはAIがつながっていないため、写真の中身とは関係のない見本の値です。AIのキーを入れると、写真から本当に読み取ります。</span>' : ''}
+      ${v.is_receipt === false ? '<span class="sub neg">領収書・レシートに見えませんでした。写真を確かめてください。</span>' : ''}
+      ${v.note ? `<span class="sub">AIから：${esc(v.note)}</span>` : ''}
+      <dl class="rcvals"><div><dt>使った日</dt><dd class="num">${esc(md(v.date) || '読めませんでした')}</dd></div><div><dt>金額</dt><dd class="num">${v.amount ? yen(v.amount) : '読めませんでした'}</dd></div>
+        <div><dt>支払った先</dt><dd>${esc(v.payee || '読めませんでした')}</dd></div><div><dt>区分</dt><dd>${esc(v.category || '')}</dd></div></dl>
+      <label class="ck strong"><input type="checkbox" id="rcOk" ${rc.ok ? 'checked' : ''}> 領収書と見比べて、内容を確かめました（ちがう所は下の欄で直しました）</label>
+      <div class="row"><label class="btn sm filebtn">${icon('camera')}<span>撮り直す</span><input type="file" id="rcFile" accept="image/*" capture="environment"></label></div></div></div>`;
+}
+const renderReceipt = () => { const b = $('#nfReceipt'); if (b) b.innerHTML = receiptBox(); };
+async function readReceipt(file) {
+  if (!/^image\//.test(file.type || '') && !/\.(jpe?g|png|webp|heic)$/i.test(file.name || '')) { toast('写真（JPEG・PNG など）を選んでください'); return; }
+  S.receipt = { busy: true }; renderReceipt();
+  const img = await shrinkImage(file);
+  if (!img) { S.receipt = null; renderReceipt(); toast('この写真の形は読み取れません。JPEG か PNG で撮ってください'); return; }
+  const res = await aiCall({ kind: 'receipt', image: img.b64, media_type: img.type });
+  if (res.error) { S.receipt = null; renderReceipt(); toast(res.error); return; }
+  const v = res.sample ? SAMPLE_RECEIPT() : res;
+  const set = (id, val) => { const el = $(id); if (el && val != null && val !== '') el.value = val; };
+  set('#fd_date', /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') ? v.date : '');
+  if ($('#fd_cat') && [...$('#fd_cat').options].some(o => o.value === v.category)) $('#fd_cat').value = v.category;
+  set('#fd_payee', v.payee);
+  if (v.amount) set('#nfAmount', v.amount);
+  if (!S.titleTouched && (v.items || v.payee)) { $('#nfTitle').value = `経費の精算 ${v.items || v.payee}`.slice(0, 60); S.titleTouched = true; }
+  // 写真は添付書類に（前に読み取った写真は外す）
+  if (S.receipt?.file) S.pick = S.pick.filter(f => f !== S.receipt.file);
+  const photo = file.size <= MAX_FILE ? file : null;
+  if (photo && fileKind(photo)) S.pick.push(photo);
+  S.receipt = { read: true, sample: !!res.sample, v, url: img.url, file: photo, ok: false };
+  renderReceipt(); renderPick(); updateForm(false);
+}
+
+// 規程の窓口
+const ASK_EX = ['年末調整の書類はいつまでに出す？', '時間単位の有給は何時間まで取れる？', '出張のホテル代の上限は？', 'エアコンが壊れたらどこに連絡する？', '結婚したらお祝い金はある？'];
+async function askNow(q) {
+  q = String(q || '').trim(); if (!q || S.askBusy) return;
+  S.askBusy = true; S.ask = { q, busy: true }; render();
+  let res = await aiCall({ kind: 'ask', q });
+  if (res.sample) { const r = await sb.rpc('ask_sample', { p_q: q }); res = r.error ? { error: r.error.message } : r.data; }
+  S.askBusy = false;
+  S.ask = res.error ? { q, error: res.error } : { q, ...res };
+  try { await loadAll(); } catch (_) {}
+  render();
+}
+const docByTitle = t => S.docs.find(d => d.title === t);
+function askAnswer(a) {
+  if (a.busy) return `<section class="panel askans busy"><span class="spin" aria-hidden="true"></span><div><b>「${esc(a.q)}」</b><span class="sub">文書から探しています…</span></div></section>`;
+  if (a.error) return `<section class="panel askans"><b>「${esc(a.q)}」</b><p class="neg">${esc(a.error)}</p></section>`;
+  return `<section class="panel askans ${a.found ? '' : 'nf'}"><div class="aq">${avatar(S.me.id, 'sm')}<b>${esc(a.q)}</b></div>
+    <div class="aa"><span class="avt sm sys">${icon('chat')}</span><div><div class="row wrap">${a.sample ? '<span class="lbl line sm">見本の答え（AIはまだつないでいません）</span>' : aiBadge()}${a.found ? '' : '<span class="lbl wait sm">文書には見つかりませんでした</span>'}</div>
+      <p class="pre">${esc(a.answer)}</p>
+      ${(a.refs || []).length ? `<div class="arefs"><span class="sub">もとにした箇所</span>${a.refs.map(r => { const d = docByTitle(r.doc); return `<div class="aref">${icon('book')}<div><b>${esc(r.doc)}　${esc(r.section)}</b>${r.quote ? `<span class="sub">「${esc(r.quote)}」</span>` : ''}</div>${d ? `<button class="btn sm" type="button" data-a="docAt" data-doc="${d.id}" data-sec="${esc(r.section)}">文書で見る</button>` : ''}</div>`; }).join('')}</div>` : ''}
+      <div class="adept">${icon('info')}<div><b>くわしくは：${esc(a.dept || '総務課')}</b>${a.dept_reason ? `<span class="sub">${esc(a.dept_reason)}。</span>` : ''}<span class="sub">自分の場合はどうなるか、など人によって変わることは、担当の部署に聞いてください。</span></div></div>
+    </div></div></section>`;
+}
+VIEWS.ask = function () {
+  if (!S.boardReady) return VIEWS.home();
+  const mineQ = S.asks.filter(x => x.staff_id === S.me.id);
+  const tab = S.me.is_soumu ? S.askTab : 'mine';
+  const list = tab === 'mine' ? mineQ : tab === 'nf' ? S.asks.filter(x => !x.found) : S.asks;
+  return `${pageHead('規程の窓口', '就業規則・旅費規程・マニュアルなど「文書」に入っているものをもとに答えます。どこに書いてあるかと、くわしく聞く先の部署も出します。')}
+  ${S.aiMode !== 'ai' ? guide('<b>いまは見本で動いています。</b>AIがまだつながっていないため、聞いた言葉と合う箇所を探して出しています。AIのキーを入れると、文章で答えるようになります（文書の中身だけをもとに答え、書いていないことは担当の部署を案内します）。') : ''}
+  <section class="panel"><form id="askf" class="askform"><label class="f wide"><span class="fl">聞きたいこと</span><textarea id="askQ" rows="2" placeholder="例：年末調整の書類はいつまでに出せばいい？"></textarea></label>
+    <button class="btn primary" type="submit" ${S.askBusy ? 'disabled' : ''}>${icon('send')}聞く</button></form>
+    <div class="chips ex">${ASK_EX.map(q => `<button type="button" class="pchip" data-a="askEx" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <p class="small muted" style="margin:8px 0 0">ほかの人の給与や病気など、個人の情報には答えません。答えは規程の文をもとにしていますが、最後は担当の部署の判断になります。</p></section>
+  ${S.ask ? askAnswer(S.ask) : ''}
+  <section class="panel flush"><div class="panel-h"><h2>${S.me.is_soumu ? '問い合わせの記録' : 'これまでに聞いたこと'}</h2></div>
+    ${S.me.is_soumu ? tabs([['mine', '自分', mineQ.length], ['all', 'みんな', S.asks.length], ['nf', '答えられなかったもの', S.asks.filter(x => !x.found).length]], tab, 'data-askt') : ''}
+    ${list.length ? `<ul class="mini">${list.slice(0, 30).map(x => `<li class="click" data-a="askShow" data-ask="${x.id}"><span class="lbl ${x.found ? 'ok' : 'wait'} sm">${x.found ? '答えあり' : '担当へ'}</span><div class="x"><b>${esc(x.q)}</b><span class="num">${S.me.is_soumu && x.staff_id !== S.me.id ? esc(P(x.staff_id).name) + '・' : ''}${fmtAt(x.at)}・${esc(x.answer?.dept || '')}${x.sample ? '・見本' : ''}</span></div>${icon('chevr')}</li>`).join('')}</ul>` : emptyArt('まだありません')}
+    ${tab === 'nf' ? '<p class="small muted pfoot">答えられなかった問い合わせは、規程やマニュアルに書き足すと、次から答えられるようになります。</p>' : ''}
+  </section>`;
+};
+
+// ---------------------------------------------------------------- 新しい画面の操作
+document.addEventListener('click', async e => {
+  const t = e.target.closest('button,[data-a],[data-bkk],[data-ots],[data-buyf],[data-askt],[data-otwho]'); if (!t || t.disabled) return;
+  const d = t.dataset;
+  if (d.bkk) { S.bookKind = d.bkk; S.bookSel = null; S.bookForm = null; render(); return; }
+  if (d.ots) { S.otScope = d.ots; render(); return; }
+  if (d.buyf) { S.buyFilter = d.buyf; render(); return; }
+  if (d.askt) { S.askTab = d.askt; render(); return; }
+  if (d.otwho) { const x = P(d.otwho); S.teamDept = x.dept_id; S.teamWho = x.id; S.view = 'team'; S.open = null; render(); setTimeout(() => $('#teamWho')?.scrollIntoView({ block: 'start' }), 0); return; }
+  const a = d.a; if (!a) return;
+  if (a === 'printFax') { doPrint('fax'); return; }
+  if (a === 'goBul') { S.view = 'board'; S.open = null; S.notesOpen = false; S.moreOpen = false; render(); setTimeout(() => { const el = $('#bul' + d.b); if (el) el.scrollIntoView({ block: 'start' }); }, 0); return; }
+  if (a === 'circSeen') { await rpc('circ_seen', { p_id: +d.id }, '「見た」の印を押しました'); return; }
+  if (a === 'circAdd') { const who = $('#circWho')?.value; if (!who) { toast('回覧する人を選んでください'); return; } await rpc('circ_add', { p_id: +d.id, p_staff: who }, `${P(who).name}さんに回覧しました`); return; }
+  if (a === 'wdOpen') { S.wdOpen = !S.wdOpen; render(); if (S.wdOpen) setTimeout(() => $('#wdReason')?.focus(), 0); return; }
+  if (a === 'withdraw') { const ok = await rpc('withdraw_ringi', { p_id: +d.id, p_reason: ($('#wdReason')?.value || '').trim() || null }, '取り下げました。回っていた先の人にも知らせます'); if (ok) S.wdOpen = false; return; }
+  if (a === 'auVerify') { const { data, error } = await sb.rpc('audit_verify'); S.auditVerify = error ? { error: error.message } : data; render(); return; }
+  if (a === 'bulNew') { S.bulNew = true; render(); setTimeout(() => $('#bnTitle')?.focus(), 0); return; }
+  if (a === 'bulNewOff') { S.bulNew = false; render(); return; }
+  if (a === 'bulRead') { await rpc('bulletin_read', { p_id: +d.b }, '「読みました」にしました'); return; }
+  if (a === 'bulWho') { S.bulOpen = S.bulOpen === +d.b ? null : +d.b; render(); return; }
+  if (a === 'bulRemind') { await rpc('bulletin_remind', { p_id: +d.b }, n => `まだ読んでいない ${n}人に、もう一度知らせました`); return; }
+  if (a === 'bulClose') { await rpc('bulletin_close', { p_id: +d.b }, '終わったお知らせに移しました'); return; }
+  if (a === 'bkPrev' || a === 'bkNext') { S.bookDay = addDays(bkDay(), a === 'bkPrev' ? -1 : 1); S.bookSel = null; render(); return; }
+  if (a === 'bkToday') { S.bookDay = null; S.bookSel = null; render(); return; }
+  if (a === 'bookSel') { S.bookSel = d.bk ? +d.bk : null; render(); return; }
+  if (a === 'bookAt') { const h = +d.h; S.bookForm = { res: +d.res, date: bkDay(), from: `${String(h).padStart(2, '0')}:00`, to: `${String(Math.min(h + 1, 23)).padStart(2, '0')}:00`, purpose: $('#bkPurpose')?.value || '' }; S.bookSel = null; render(); setTimeout(() => { $('#bkPurpose')?.focus(); $('#bkf')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 0); return; }
+  if (a === 'bookCancel') { const ok = await rpc('cancel_booking', { p_id: +d.bk }, '予約を取り消しました'); if (ok) S.bookSel = null; return; }
+  if (a === 'docOpen') { S.docOpen = +d.doc; S.docVer = null; render(); window.scrollTo({ top: 0 }); return; }
+  if (a === 'docBack') { S.docOpen = null; S.docVer = null; render(); return; }
+  if (a === 'docVerLive') { S.docVer = null; render(); return; }
+  if (a === 'docNew') { S.docEdit = 'new'; render(); window.scrollTo({ top: 0 }); return; }
+  if (a === 'docEdit') { S.docEdit = +d.doc; render(); window.scrollTo({ top: 0 }); return; }
+  if (a === 'docEditOff') { S.docEdit = null; render(); return; }
+  if (a === 'docAt') { S.view = 'docs'; S.open = null; S.docOpen = +d.doc; S.docVer = null; S.docEdit = null; render();
+    setTimeout(() => { const el = document.getElementById('sec-' + encodeURIComponent(d.sec || '')); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('hit'); } else window.scrollTo({ top: 0 }); }, 0); return; }
+  if (a === 'askEx') { $('#askQ').value = d.q; askNow(d.q); return; }
+  if (a === 'askShow') { const x = S.asks.find(y => y.id === +d.ask); if (x) { S.ask = { q: x.q, ...x.answer }; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } return; }
+});
+document.addEventListener('submit', async e => {
+  const id = e.target.id;
+  if (id === 'buyf') {
+    const f = e.target; const step = f.dataset.step;
+    const args = { p_id: +f.dataset.id, p_step: step, p_date: $('#buyDate').value || null, p_text: ($('#buyText')?.value || '').trim() || null, p_amount: null };
+    if (step === 'invoice') { const v = parseInt(toHalf($('#buyAmt').value).replace(/[^0-9]/g, ''), 10); if (!Number.isFinite(v)) { toast('請求書の金額を入れてください'); return; } args.p_amount = v; }
+    await rpc('purchase_step', args, { order: '発注を入れました。申請した人に知らせます', deliver: '納品を確かめました。経理に知らせます', invoice: '請求書を確かめました', pay: '支払いを入れました。これで終わりです' }[step]);
+    return;
+  }
+  if (id === 'auf') { S.auditQ = $('#auQ').value.trim(); S.audit = null; render(); return; }
+  if (id === 'bnf') {
+    const title = $('#bnTitle').value.trim(); if (!title) { toast('題名を入れてください'); $('#bnTitle').focus(); return; }
+    const ok = await rpc('bulletin_post', { p_title: title, p_body: $('#bnBody').value.trim(), p_dept: +$('#bnDept').value || null, p_need_read: $('#bnNeed').checked, p_until: $('#bnUntil').value || null, p_pinned: !!$('#bnPin')?.checked },
+      n => `お知らせを出しました。あての人に知らせます`);
+    if (ok) { S.bulNew = false; render(); }
+    return;
+  }
+  if (id === 'bkf') {
+    const res = +$('#bkRes').value, date = $('#bkDate').value, from = $('#bkFrom').value, to = $('#bkTo').value, toDate = $('#bkToDate')?.value || date;
+    const purpose = $('#bkPurpose').value.trim();
+    if (!date || !from || !to) { toast('日にちと時間を入れてください'); return; }
+    if (!purpose) { toast(S.bookKind === '車' ? '行き先・用件を入れてください' : '使い道を入れてください'); $('#bkPurpose').focus(); return; }
+    const st = new Date(atOf(date, from)).toISOString(), en = new Date(atOf(toDate, to)).toISOString();
+    const args = { p_res: res, p_start: st, p_end: en, p_purpose: purpose }; const who = $('#bkFor')?.value; if (who) args.p_for = who;
+    const ok = await rpc('book', args, `${S.res.find(x => x.id === res)?.name || ''}を予約しました（${md(date)} ${from}〜${to}）`);
+    if (ok) { S.bookForm = null; S.bookDay = date; S.bookSel = ok.data; render(); }
+    return;
+  }
+  if (id === 'dcf') {
+    const dd = S.docEdit === 'new' ? null : S.docs.find(x => x.id === S.docEdit);
+    const body = $('#dcBody').value; const note = $('#dcNote').value.trim();
+    if (!body.trim()) { toast('本文を入れてください'); return; }
+    if (!dd && !$('#dcTitle').value.trim()) { toast('文書の名前を入れてください'); $('#dcTitle').focus(); return; }
+    if (dd && !note) { toast('何を変えたかを入れてください（古い版と見分けるため）'); $('#dcNote').focus(); return; }
+    const ok = await rpc('doc_save', { p_doc: dd ? dd.id : null, p_title: dd ? null : $('#dcTitle').value.trim(), p_category: dd ? null : $('#dcCat').value, p_dept: dd ? null : +$('#dcDept').value,
+      p_body: body, p_note: note || null, p_effective: $('#dcEff').value || null, p_announce: !!$('#dcAnn')?.checked }, dd ? '新しい版として保存しました。今の版は古い版として残ります' : '文書を足しました');
+    if (ok) { S.docEdit = null; S.docOpen = ok.data; S.docVer = null; render(); window.scrollTo({ top: 0 }); }
+    return;
+  }
+  if (id === 'askf') { askNow($('#askQ').value); return; }
+});
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.id === 'rcFile' && el.files && el.files[0]) { readReceipt(el.files[0]); el.value = ''; return; }
+  if (el.id === 'rcOk' && S.receipt) { S.receipt.ok = el.checked; return; }
+  if (el.id === 'bkDay' && el.value) { S.bookDay = el.value; S.bookSel = null; render(); return; }
+  if (el.id === 'docVer') { S.docVer = +el.value; render(); return; }
+  if (el.id === 'docMark') { S.docMark = el.checked; render(); return; }
+});
+
 // ---------------------------------------------------------------- 操作
 // 前の申請を写して、新しい申請の画面を開く（日にちと添付は写さない）
 function copyRingi(r) {
@@ -1529,8 +2220,9 @@ function openNew(t) {
   S.prefill = null; S.view = 'new'; S.open = null; S.edit = null; S.step = 2; S.newType = t.id; S.pick = []; S.titleTouched = false; S.notesOpen = false;
   render(); window.scrollTo({ top: 0 });
 }
-function go(v) { S.prefill = null; S.teamWho = null; if (v !== 'new' || S.view !== 'new') S.pick = []; if (v === 'new') S.step = 1; S.view = v; S.open = null; S.edit = null; S.notesOpen = false; S.titleTouched = false; S.moreOpen = false; render(); window.scrollTo({ top: 0 }); }
+function go(v) { S.prefill = null; S.teamWho = null; S.docOpen = null; S.docEdit = null; S.docVer = null; S.bulNew = false; S.bookSel = null; S.receipt = null; if (v === 'audit') S.audit = null; if (v !== 'new' || S.view !== 'new') S.pick = []; if (v === 'new') S.step = 1; S.view = v; S.open = null; S.edit = null; S.notesOpen = false; S.titleTouched = false; S.moreOpen = false; render(); window.scrollTo({ top: 0 }); }
 function openR(id) {
+  if (S.open !== +id) S.wdOpen = false;
   S.open = +id; S.edit = null; S.notesOpen = false; S.moreOpen = false;
   if (S.notices.some(n => n.ringi_id === +id && !n.is_read)) {
     S.notices.forEach(n => { if (n.ringi_id === +id) n.is_read = true; });
@@ -1560,7 +2252,7 @@ document.addEventListener('click', async e => {
   const a = d.a; const r = d.id && !['selType'].includes(a) ? R(+d.id) : null;
   if (a === 'how') { S.showHow = !S.showHow; render(); return; }
   if (a === 'noop') return;
-  if (a === 'print') { window.print(); return; }
+  if (a === 'print') { doPrint('main'); return; }
   if (a === 'copy') { copyRingi(r); return; }
   if (a === 'newLeave') { const lt = typeByName('有給休暇'); if (lt) openNew(lt); else toast('有給休暇の種類が見つかりません'); return; }
   if (a === 'remind') { await rpc('remind_ringi', { p_id: r.id }, () => { const c = cur(R(r.id)); return `${c ? sanNames(c.approver_ids) : ''}に催促のお知らせを送りました`; }); return; }
@@ -1578,7 +2270,8 @@ document.addEventListener('click', async e => {
   }
   if (a === 'punch') {
     const sh = +($('#pcShift')?.value || 0) || null;
-    await rpc('punch', { p_shift: sh }, x => x && x.kind === 'out' ? `退勤しました（${hmOf(Date.parse(x.at))}）。おつかれさまでした` : `出勤しました（${hmOf(Date.parse(x.at))}）`);
+    const bv = $('#pcBreak')?.value; const args = { p_shift: sh }; if (bv) args.p_break = +bv;
+    await rpc('punch', args, x => x && x.kind === 'out' ? `退勤しました（${hmOf(Date.parse(x.at))}）。おつかれさまでした` : `出勤しました（${hmOf(Date.parse(x.at))}）`);
     return;
   }
   if (a === 'mprev' || a === 'mnext') { const ym = curMonth(); S.workMonth = addDays(`${ym}-01`, a === 'mprev' ? -1 : 32).slice(0, 7); render(); return; }
