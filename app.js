@@ -131,8 +131,8 @@ async function loadAll() {
   // 勤怠の表も、貼り直すまではない
   S.workReady = !res[10].error && !res[11].error;
   if (!S.workReady) { res[10] = { data: [] }; res[11] = { data: [] }; }
-  const err = res.find(r => r.error);
-  if (err) throw err.error;
+  const bad = res.map((r, i) => r.error ? `${tables[i]}：${r.error.code || r.error.status || ''} ${r.error.message || ''}` : null).filter(Boolean);
+  if (bad.length) throw new Error(bad.join(' ／ '));
   [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work] = res.map(r => r.data || []);
   S.shifts.sort((a, b) => a.sort - b.sort);
   S.depts.sort((a, b) => a.sort - b.sort || a.id - b.id);
@@ -219,7 +219,7 @@ async function doLogin(user, pw) {
 async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) { loginView(); return; }
-  try { await loadAll(); } catch (e) { loginView('データを読み込めませんでした。もう一度ログインしてください。'); return; }
+  try { await loadAll(); } catch (e) { loginView(`データを読み込めませんでした。次の文をそのまま教えてください。【${e?.message || e}】`); return; }
   S.me = S.staff.find(s => s.id === data.session.user.id);
   if (!S.me) { await sb.auth.signOut(); loginView('この人は職員として登録されていません。'); return; }
   S.view = 'home'; S.open = null;
