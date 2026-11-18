@@ -198,10 +198,22 @@ function loginView(msg) {
   </form></div></section>`;
 }
 async function doLogin(user, pw) {
-  const u = user.trim().toLowerCase();
+  // 全角の英数字・空白は半角に直してから送る（日本語入力のまま打った・前後に空白がついた場合に通るように）
+  const half = t => String(t || '').replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[\s\u3000]/g, '');
+  const u = half(user).toLowerCase();
   const email = u.includes('@') ? u : `${u}@${CFG.loginDomain || 'trial.example'}`;
-  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-  if (error) { loginView('ログイン名かパスワードがちがいます。'); return; }
+  let error;
+  try { ({ error } = await sb.auth.signInWithPassword({ email, password: half(pw) })); }
+  catch (e) { error = e; }
+  if (error) {
+    const st = error.status, code = error.code || '';
+    if (code === 'invalid_credentials' || st === 400) loginView('ログイン名かパスワードがちがいます。');
+    else if (st === 429) loginView('ログインを続けて試しすぎました。少し待ってからもう一度どうぞ。');
+    else if (!st || error.name === 'AuthRetryableFetchError' || /fetch|network/i.test(error.message || ''))
+      loginView('サーバーにつながりませんでした。このPCのネットワーク（病院の通信の決まりなど）で止められている可能性があります。スマホのテザリングなど別の回線で試してください。');
+    else loginView(`ログインできませんでした（${st || ''} ${error.message || ''}）。この文をそのまま教えてください。`);
+    return;
+  }
   await start();
 }
 async function start() {
