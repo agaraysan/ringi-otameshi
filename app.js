@@ -2710,7 +2710,7 @@ const FELICA = {
     }
     if (!found) throw new Error('読み取り機の口が見つかりませんでした');
     try { await d.claimInterface(found.n); } catch (e) {
-      throw new Error('読み取り機を使えませんでした。ほかのソフトが使っているか、ドライバが「NFC Port」になっていない可能性があります（手順書を見てください）');
+      throw new Error('読み取り機を使えませんでした。Windows では、ソニーの「NFCポートソフトウェア」が読み取り機を使っていると、ブラウザから使えません（手順書の F のとおり、WinUSB に切り替えてください）。ほかのタブでお試し版を開いていたら閉じてください');
     }
     this.dev = d; this.ep = found;
     // 読み取りの準備（RFを入れ直して FeliCa にする）
