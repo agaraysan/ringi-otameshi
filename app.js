@@ -146,7 +146,8 @@ const filesOf = rid => S.files.filter(f => f.ringi_id === rid).sort((a, b) => a.
 const stampedAny = r => routeOf(r.id).some(x => x.stamped_by);
 const isMine = r => r.owner_id === S.me.id || r.filer_id === S.me.id;
 const canChangeFiles = r => isMine(r) && (r.status === 'back' || (r.status === 'wait' && !stampedAny(r)));
-const canSeeFiles = r => isMine(r) || S.me.is_soumu || !!proxyFor(r) || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id);
+const canSeeFiles = r => isMine(r) || S.me.is_soumu || !!proxyFor(r) || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id)
+  || (S.flowReady && S.circ.some(c => c.ringi_id === r.id && c.staff_id === S.me.id));
 const decidedAt = r => r.status === 'ok' ? r.updated_at : null;
 const no = r => 'R-' + String(r.id).padStart(4, '0');
 const canProxy = () => S.me.is_soumu || S.me.is_boss;
@@ -199,7 +200,9 @@ const bar = (used, wait, total) => { const pc = x => total > 0 ? Math.min(100, M
 const proxyTargets = () => S.staff.filter(s => s.id !== S.me.id && (S.me.is_soumu || deptChain(s.dept_id).some(d => myBossDepts().includes(d))));
 
 const TABLES = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work', 'away', 'leave_grant', 'budgets',
-  'ringi_signs', 'ringi_circ', 'purchase', 'ot_hist', 'bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log'];
+  'ringi_signs', 'ringi_circ', 'purchase', 'ot_hist', 'bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log',
+  'staff_hr', 'leave_auto_log', 'wish_months', 'shift_wishes', 'sites', 'cards', 'kiosks', 'hr_procs', 'contracts', 'licenses', 'surveys', 'survey_done', 'hr_roles', 'stress_runs', 'stress_results'];
+const HR_TABLES = TABLES.slice(TABLES.indexOf('staff_hr'));
 // 画面に要るものを読む。ふだんは「まとめて読む」手続き（load_all）で1回だけたのむ。
 // Supabase に貼り直す前（手続きがまだない）ときだけ、表を3本ずつ順に読む（無料枠のサーバーの受け口があふれないように）。
 async function loadAll() {
@@ -214,6 +217,8 @@ async function loadAll() {
     S.filesReady = S.workReady = S.extraReady = true;
     // 合議・回覧・購入・時間外の見張り、お知らせ・予約・文書・窓口は、今回の貼り直しのあとから
     S.flowReady = 'ringi_signs' in data; S.boardReady = 'bulletins' in data;
+    // 人事・手続き・カードは、今回の貼り直しのあとから
+    S.hrReady = 'staff_hr' in data;
   } else {
     const res = [];
     for (let i = 0; i < TABLES.length; i += 3) res.push(...await Promise.all(TABLES.slice(i, i + 3).map(t => sb.from(t).select('*'))));
@@ -225,13 +230,15 @@ async function loadAll() {
     S.extraReady = soft('away', 'leave_grant', 'budgets');
     S.flowReady = soft('ringi_signs', 'ringi_circ', 'purchase', 'ot_hist');
     S.boardReady = soft('bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log');
+    S.hrReady = soft(...HR_TABLES);
     const bad = res.map((r, i) => r.error ? `${TABLES[i]}：${r.error.code || r.error.status || ''} ${r.error.message || ''}` : null).filter(Boolean);
     if (bad.length) throw new Error(bad.join(' ／ '));
     data = Object.fromEntries(TABLES.map((t, i) => [t, res[i].data || []]));
   }
   const g = t => data[t] || [];
   [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work, S.away, S.leave, S.budgets,
-   S.signs, S.circ, S.buy, S.otHist, S.bul, S.bulReads, S.res, S.book, S.docs, S.docv, S.asks] = TABLES.map(g);
+   S.signs, S.circ, S.buy, S.otHist, S.bul, S.bulReads, S.res, S.book, S.docs, S.docv, S.asks,
+   S.hr, S.leaveLog, S.wishMonths, S.wishes, S.sites, S.cards, S.kiosks, S.procs, S.contracts, S.lics, S.surveys, S.svDone, S.hrRoles, S.stressRuns, S.stress] = TABLES.map(g);
   S.res.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.docs.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.bul.sort((a, b) => b.id - a.id);
@@ -298,7 +305,7 @@ function loginView(msg) {
     <label class="f"><span class="fl">ログイン名</span><input id="lfUser" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="例：nakamura" required></label>
     <label class="f"><span class="fl">パスワード</span><input id="lfPw" type="password" autocomplete="current-password" required></label>
     <button class="btn primary full" type="submit">ログインする</button>
-  </form></div></section>`;
+  </form>${cardLoginHtml()}</div></section>`;
 }
 async function doLogin(user, pw) {
   // 全角の英数字・空白は半角に直してから送る（日本語入力のまま打った・前後に空白がついた場合に通るように）
@@ -375,6 +382,8 @@ function previewRoute(typeId, amount, ownerId, filerId, details = []) {
 // ---------------------------------------------------------------- 画面の部品
 // 状況のラベル。色の意味は全画面で同じ（青＝あなたの番、黄＝回覧中、赤＝差し戻し、緑＝決裁済み、灰＝却下）。
 function pill(r) {
+  if (r.status === 'ok' && T(r.type_id)?.report) { const cs = S.circ.filter(c => c.ringi_id === r.id); const n = cs.filter(c => c.seen_at).length;
+    return n < cs.length ? `<span class="lbl wait">${icon('eye')}報告（${n}/${cs.length}人が見た）</span>` : `<span class="lbl ok">${icon('check')}報告（全員が見た）</span>`; }
   if (r.status === 'ok') return `<span class="lbl ok">${icon('check')}決裁済み</span>`;
   if (r.status === 'back') return `<span class="lbl back">${icon('undo')}差し戻し</span>`;
   if (r.status === 'no') return `<span class="lbl no">${icon('ban')}却下</span>`;
@@ -431,9 +440,10 @@ function navHtml() {
     ${S.extraReady && (S.me.is_soumu || S.me.is_boss) ? b('budget', '部署の予算', 'yen') : ''}
     ${b('org', '組織図', 'org')}
     ${S.boardReady ? `<div class="ngroup">病院の中</div>${b('board', 'お知らせ', 'mega', bulToRead().length ? `<span class="badge warn" title="読んでほしいお知らせ">${bulToRead().length}</span>` : '')}${b('book', '予約', 'key')}${b('docs', '文書', 'book')}${b('ask', '規程の窓口', 'chat')}` : ''}
-    ${S.flowReady && (S.me.is_soumu || S.me.is_boss) ? b('ot', '時間外の見張り', 'warn', (() => { const n = watchPeople().filter(x => otStat(x.id).level !== 'ok').length; return n ? `<span class="badge warn" title="気をつける人">${n}</span>` : ''; })()) : ''}
+    ${S.hrReady ? hrNav(b) : ''}
+    ${S.flowReady && (S.me.is_soumu || S.me.is_boss) ? b('ot', '勤怠の見張り', 'warn', (() => { const n = watchPeople().filter(x => otStat(x.id).level !== 'ok').length; return n ? `<span class="badge warn" title="気をつける人">${n}</span>` : ''; })()) : ''}
     ${S.flowReady && (S.me.is_soumu || isKeiri() || isShisetsu()) ? b('buy', '購入の進み', 'cart') : ''}
-    ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}${S.flowReady ? b('audit', '監査の記録', 'shield') : ''}` : ''}
+    ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}${S.flowReady ? b('audit', '監査の記録', 'shield') : ''}${S.hrReady ? b('cards', 'カードと打刻の端末', 'card') : ''}` : ''}
     <div class="ngroup">使い方</div>${b('howto', 'お試しの進め方', 'info')}
   </div>`;
   return main + sub;
@@ -446,6 +456,7 @@ function render() {
   $('#bar').hidden = false; $('#navbar').hidden = false;
   $('#me').innerHTML = `${avatar(S.me.id)}<span class="nmt"><b>${esc(S.me.name)}</b><span>${esc(S.me.dept)}・${esc(titleOf(S.me))}</span></span>`;
   renderBell();
+  $('#qc').innerHTML = quickCards();
   $('#nav').innerHTML = navHtml();
   document.body.classList.toggle('more-open', S.moreOpen);
   renderNotes();
@@ -457,7 +468,8 @@ function render() {
 }
 
 // お知らせの行を押したときの行き先（申請・院内のお知らせ）
-const noteAttr = n => n.ringi_id ? `data-open="${n.ringi_id}"` : /^bulletin:\d+$/.test(n.link || '') ? `data-a="goBul" data-b="${n.link.split(':')[1]}"` : '';
+const noteAttr = n => n.ringi_id ? `data-open="${n.ringi_id}"` : /^bulletin:\d+$/.test(n.link || '') ? `data-a="goBul" data-b="${n.link.split(':')[1]}"`
+  : /^(hr|contract|license|survey|stress):\d+$/.test(n.link || '') ? `data-a="goLink" data-link="${esc(n.link)}"` : ['leave', 'card'].includes(n.link) ? `data-a="goLink" data-link="${esc(n.link)}"` : '';
 // ホームに出す「回覧」と「読んでほしいお知らせ」
 function homeAlerts() {
   const cs = myCirc(), bs = bulToRead();
@@ -476,8 +488,49 @@ function renderNotes() {
   <p class="nfoot">本番では、スマホにも同じ知らせが届くようにできます（お試し版ではこの画面だけ）。</p>`;
 }
 
+// ---------------------------------------------------------------- 画面の上の帯：自分に関係する件数（どの画面でも見える）
+// 読んでほしいもの（回覧・お知らせ など）。種類が増えたらここへ足す。
+function readItems() {
+  const out = [];
+  myCirc().forEach(r => out.push({ ic: 'eye', kind: '回覧', title: r.title, attr: `data-open="${r.id}"`, sub: `${esc(P(r.owner_id).name)}さん・${esc(r.type_name)}` }));
+  bulToRead().forEach(b => out.push({ ic: 'mega', kind: 'お知らせ', title: b.title, attr: `data-a="goBul" data-b="${b.id}"`, sub: '読んだら「読みました」を押す' }));
+  (window.EXTRA_READ || []).forEach(f => out.push(...f()));
+  return out;
+}
+// 期限が近いもの（3日以内・過ぎたもの）
+function dueItems() {
+  const out = [];
+  S.ringi.filter(r => r.status === 'wait' && r.due_date && dueLeft(r) <= 3 && (isMine(r) || myTurn(r)))
+    .forEach(r => out.push({ ic: 'clock', kind: myTurn(r) ? 'あなたの決裁' : '自分の申請', title: r.title, attr: `data-open="${r.id}"`, left: dueLeft(r), sub: `期限 ${md(r.due_date)}` }));
+  (window.EXTRA_DUE || []).forEach(f => out.push(...f()));
+  return out.sort((a, b) => a.left - b.left);
+}
+const leftText = n => n < 0 ? `${-n}日過ぎ` : n === 0 ? '今日まで' : `あと${n}日`;
+function quickCards() {
+  if (!S.me) return '';
+  const back = S.ringi.filter(r => isMine(r) && r.status === 'back').length;
+  const ap = isApprover();
+  const items = [
+    ['undo', 'back', '差し戻し', '戻し', back, 'data-nav="list" data-lf="back"', '差し戻されて、直して出し直すもの'],
+    ...(ap ? [['inbox', 'turn', '承認待ち', '承認', waitingForMe().length, 'data-nav="wait"', 'あなたの承認を待っているもの']] : []),
+    ['eye', 'info', '読んでほしい', '読む', readItems().length, 'data-nav="todo" data-to="tdRead"', '回覧・お知らせなどで、まだ見ていないもの'],
+    ['clock', 'wait', '期限が近い', '期限', dueItems().length, 'data-nav="todo" data-to="tdDue"', '期限が近いもの・過ぎたもの'],
+  ];
+  const todo = myTodo();
+  if (todo) items.push(['warn', 'back', '勤務の確かめ', '勤務', todo, 'data-nav="work"', '打刻もれ・退勤のずれなど、確かめること']);
+  return items.map(([ic, cls, l, sh, n, nav, tip]) => `<button type="button" class="qcard ${n ? cls : 'zero'} ${nav.includes('"work"') ? 'qwork' : ''}" ${nav} title="${tip}"><span class="qi">${icon(ic)}</span><span class="qn num">${n}</span><span class="ql">${l}</span><span class="qs">${sh}</span></button>`).join('');
+}
 // ---------------------------------------------------------------- それぞれの画面
 const VIEWS = {};
+// やること：読んでほしいもの・期限が近いもの をまとめて見る
+VIEWS.todo = function () {
+  const rd = readItems(), du = dueItems();
+  const li = x => `<li class="click" ${x.attr}><span class="tdi">${icon(x.ic)}</span><div class="x"><b>${esc(x.title)}</b><span>${esc(x.kind)}・${x.sub}</span></div>${x.left != null ? `<span class="lbl ${x.left < 0 ? 'back' : x.left <= 1 ? 'wait' : 'line'} sm">${leftText(x.left)}</span>` : ''}${icon('chevr')}</li>`;
+  return `${pageHead('やること', 'あなたに読んでほしいものと、期限が近いものです。画面のいちばん上の数と同じです。')}
+  <section class="panel flush" id="tdRead"><div class="panel-h"><h2>読んでほしいもの（${rd.length}件）</h2></div>${rd.length ? `<ul class="mini">${rd.map(li).join('')}</ul>` : emptyArt('いま読んでほしいものはありません')}</section>
+  <section class="panel flush" id="tdDue"><div class="panel-h"><h2>期限が近いもの（${du.length}件）</h2><span class="sub">3日以内に期限が来るもの・過ぎたもの</span></div>${du.length ? `<ul class="mini">${du.map(li).join('')}</ul>` : emptyArt('期限が近いものはありません')}</section>`;
+};
+
 
 // ホーム：決裁する人は「決裁待ち」、職員は「わたしの申請」の進み具合
 VIEWS.home = function () { return isApprover() ? inbox(true) : staffHome(); };
@@ -561,11 +614,17 @@ VIEWS.howto = function () {
     '<b>岡田経理課長</b>（<code>okada</code>）で「その他」の<b>購入の進み</b>を開き、決裁された購入の<b>発注→納品→請求書→支払い</b>を進める。請求書の金額が決裁より多いと印が出る',
     '<b>斎藤師長</b>（<code>saito</code>）で入ると、<b>回覧</b>が届いている（「見た」を押す）。<b>中村さん</b>は回覧中の自分の申請を<b>取り下げ</b>られる。期限が近い申請には「期限」の印が出る',
     '<b>田中さん</b>（<code>tanaka</code>）で「出張 学会（大阪）」を開き、<b>業者への手配の依頼書（FAX）を印刷</b>する（印刷の画面で見るだけで大丈夫です）',
-    '<b>総務の青木さん</b>で「その他」の<b>時間外の見張り</b>を開く。上限に近い人・超えた人が上に並ぶ（医師は別の上限）。<b>監査の記録</b>では、だれが何を変えたかと、<b>書きかえられていないか</b>を確かめられる',
+    '<b>総務の青木さん</b>で「その他」の<b>勤怠の見張り</b>を開く。<b>有給の年5日</b>に届いていない人と、<b>有給の自動付与</b>の記録も出る。上限に近い人・超えた人が上に並ぶ（医師は別の上限）。<b>監査の記録</b>では、だれが何を変えたかと、<b>書きかえられていないか</b>を確かめられる',
     '<b>中村さん</b>で「お知らせ」を開き、年末調整のお知らせに<b>「読みました」</b>を押す。<b>青木さん</b>で入ると、<b>何人が読んだか・まだの人</b>が分かり、もう一度知らせられる',
     '<b>だれでも</b>「予約」で会議室・公用車・機材の<b>空いている所を押して予約</b>する。重なる時間は予約できない',
     '<b>だれでも</b>「文書」で就業規則や旅費規程を開き、<b>版を切り替えて変わった所</b>を見る。「規程の窓口」で<b>「出張のホテル代の上限は？」</b>などを聞くと、<b>根拠の箇所と担当の部署</b>が出る（いまは見本の答え）',
     '<b>小林さん</b>で「申請する」から<b>経費の精算</b>を選び、<b>領収書を撮る</b>（どんな写真でも大丈夫）。日付・金額・支払った先が入る（いまは見本の値。AIのキーを入れると写真から読む）',
+    '<b>中村さん</b>で「わたしの勤務」の<b>休みの希望</b>から、来月の休みたい日を押す。<b>井上師長</b>の「部署の勤務」で、みんなの希望を<b>勤務表のソフト用のCSV</b>で書き出せる。打刻のときに<b>「場所も残す」</b>にすると、院内・院外が記録に出る',
+    '<b>藤田さん</b>（<code>fujita</code>・来月入職）で入り、<b>入職の手続き</b>に入れて総務へ出し、<b>雇用契約</b>に名前を入れて同意する。<b>青木さん</b>で手続きの確かめを付けて終える。<b>渡辺さん</b>の退職の手続きも並んでいる',
+    '<b>だれでも</b>「資格・免許」で期限を見る（近いと上のカードに出る）。「アンケート」は<b>名前が残らない</b>形で答える。<b>ストレスチェック</b>は受けるとすぐ結果が出て、全員の結果は<b>実施者の長谷川医師</b>（<code>hasegawa</code>）だけが見られる',
+    '<b>青木さん</b>で「カードと打刻の端末」を開き、カードを登録する。<b>この端末を打刻用にする</b>と、カードをかざすだけで打刻できる画面になる（読み取り機がないときは番号を手で入れて試せる）。ログインの画面の<b>「カードで入る」</b>は、カード＋4けたの番号で入る',
+    '<b>森事務長</b>で「申請する」の<b>理事への報告</b>を出す（<b>数字のまとめ</b>を付けられる）。<b>近藤理事長</b>（<code>kondo</code>）と<b>岡田経理課長</b>だけに回り、<b>「見た」とひとこと</b>を返す。ほかの人には見えない',
+    '申請に書類を付けるとき、<b>マクロ入りのExcel</b>や<b>名前を変えたプログラム</b>ははじかれる。付けた書類は<b>「のぞく」</b>で画面の中で中身を見られる。決裁された稟議の<b>印刷はA4の1枚</b>に収まる',
   ];
   return `${pageHead('お試しの進め方', '1時間ほどで、申請から決裁、勤怠、お知らせ・予約・文書までを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
   <section class="panel"><ol class="steps">${steps.map(s => `<li><div>${s}</div></li>`).join('')}</ol>
@@ -706,7 +765,8 @@ function punchCard(compact) {
   return `<section class="panel punch ${compact ? 'compact' : ''}">
     <div class="pcl"><span class="pct">今日の打刻</span><b class="pcclock num" id="pcClock">${nowTxt}</b><span class="pcs">${status}</span></div>
     <div class="pcr">${ctl}</div>
-    ${compact ? '' : '<p class="pcnote">本番では、社員証に貼ったICシールを打刻用のタブレットにかざします。お試し版ではこのボタンで打刻します。</p>'}
+    ${S.hrReady && st.state !== 'done' ? `<label class="chk pcgeo"><input type="checkbox" id="pcGeo" ${geoPref() ? 'checked' : ''}><span>打刻した場所も残す（スマホの位置。病院の中か外かだけを記録の画面に出します）</span></label>` : ''}
+    ${compact ? '' : `<p class="pcnote">${S.hrReady ? '社員証やICシール（FeliCa）を、打刻用の端末にかざしても打刻できます。' : '本番では、社員証に貼ったICシールを打刻用のタブレットにかざします。お試し版ではこのボタンで打刻します。'}</p>`}
   </section>`;
 }
 
@@ -728,6 +788,7 @@ function monthTable(sid, ym, mine) {
     x.reqs.filter(r => wkind(r) === 'ot' && r.status === 'ok').forEach(r => tags.push(`<span class="lbl ok">時間外 ${esc(dval(r, 'from'))}〜${esc(dval(r, 'to'))}</span>`));
     if (x.fix) tags.push(`<span class="lbl ok">打刻を修正</span>`);
     if (x.open && !x.missing) tags.push(`<span class="lbl turn">勤務中</span>`);
+    if (x.w && S.hrReady) placeTags(x.w).forEach(t => tags.push(t));
     x.issues.forEach(i => tags.push(`<span class="lbl ${['miss', 'gap', 'late'].includes(i.k) ? 'back' : 'wait'}">${esc(i.t)}</span>`));
     const acts = mine ? x.issues.map(i =>
       i.k === 'gap' ? `<button class="btn sm" type="button" data-a="wreq" data-kind="ot" data-day="${d}">時間外の事後の申請</button>`
@@ -773,6 +834,7 @@ VIEWS.work = function () {
   ${workSums(sm, S.extraReady ? leaveStat(S.me.id) : null)}
   ${S.extraReady ? leaveCard(leaveStat(S.me.id)) : ''}
   ${otCard(S.me.id)}
+  ${S.hrReady ? wishPanel() : ''}
   <section class="panel flush"><div class="panel-h"><h2>勤務の記録</h2>${monthNav(ym)}</div>${monthTable(S.me.id, ym, true)}
   <p class="small muted pfoot">働いた時間は、休憩（決まりは日勤など60分・夜勤120分。退勤のときに実際の休憩を入れた日はその分）を差し引いた時間です。深夜は22時〜翌5時に働いた時間（割増の対象）です。予定より ${GAP_MIN}分以上遅い退勤を「確かめること」にしています。前の退勤から11時間あいていない日と、休憩が足りない日にも印を出します（どれも仮の値）。</p></section>`;
 };
@@ -1010,13 +1072,15 @@ VIEWS.new = function () {
     <div class="f wide" id="nfBudget"></div>
     <label class="f wide"><span class="fl">件名<span class="req">※必須</span></span><input id="nfTitle" value="${esc(ed ? ed.title : pf && pf.title ? pf.title : '')}" placeholder="例：鉛筆の購入"></label>
     <label class="f wide"><span class="fl" id="nfBodyLabel">内容</span><textarea id="nfBody" rows="4">${esc(ed ? ed.body : pf ? pf.body : '')}</textarea></label>
-    ${S.flowReady && !ed ? `<label class="f"><span class="fl">決裁の期限<span class="opt">なくても大丈夫</span></span><input id="nfDue" type="date" min="${todayYmd()}" value=""><span class="hint">この日までに決めてほしいとき。2日前から回る先の人にお知らせが届きます。</span></label>` : ''}
+    ${S.flowReady && !ed && t.report ? `<label class="f"><span class="fl">理事会の日</span><input id="nfDue" type="date" min="${todayYmd()}" value="" required><span class="hint">この日までに見てもらいます。2日前から、まだ見ていない人にお知らせが届きます。</span></label>
+      <div class="f wide"><span class="fl">数字のまとめ<span class="opt">なくても大丈夫</span></span><label class="chk"><input type="checkbox" id="nfSum" ${S.repNums ? 'checked' : ''}><span>勤怠と稟議の数字のまとめ（1枚）を付ける：時間外の多い部署・今月の購入の合計・部署の予算の残り</span></label><div id="nfSumBox">${S.repNums ? repSumHtml(S.repNums) : ''}</div></div>`
+    : S.flowReady && !ed ? `<label class="f"><span class="fl">決裁の期限<span class="opt">なくても大丈夫</span></span><input id="nfDue" type="date" min="${todayYmd()}" value=""><span class="hint">この日までに決めてほしいとき。2日前から回る先の人にお知らせが届きます。</span></label>` : ''}
     <div class="f wide"><span class="fl">添付書類<span class="opt">なくても大丈夫</span></span>
       ${ed && filesOf(ed.id).length ? `<p class="hint" style="margin:0 0 6px">今の添付：${filesOf(ed.id).map(f => esc(f.name)).join('、')}（外すときは申請の画面で）</p>` : ''}
       ${!S.filesReady ? '<p class="hint" style="margin:0">添付書類は、まだ準備中です（Supabase への貼り直しが終わると使えます）。</p>' : ''}
       <label class="filebtn" ${S.filesReady ? '' : 'hidden'}>${icon('clip')}<span>書類・写真を付ける</span><input type="file" id="nfFiles" multiple accept="${ACCEPT}"></label>
       <span class="hint">${FILE_RULE}</span>
-      <ul class="filelist" id="nfPick"></ul></div>
+      <ul class="filelist" id="nfPick"></ul><div class="peek" id="peekPick" hidden></div></div>
     </div>
    </section>
    <aside class="panel routebox"><h2>この順番で回ります</h2><div id="nfProxyNote"></div><div class="route" id="nfRoute"></div><p class="hint" id="nfRouteNote"></p></aside>
@@ -1027,11 +1091,20 @@ VIEWS.new = function () {
   </form>`;
 };
 function typeStep(types) {
-  const groups = [...new Set([...GRP_ORDER, ...types.map(x => x.grp || 'その他')])].filter(g => types.some(x => (x.grp || 'その他') === g));
-  return `${pageHead('申請する', '出したい申請の種類を選んでください。')}
+  const gOf = x => x.grp || 'その他';
+  const groups = [...new Set([...GRP_ORDER, ...types.map(gOf)])].filter(g => types.some(x => gOf(x) === g));
+  // よく使う：自分が出したことの多い種類（足りない分はよく出る種類で埋める）
+  const cnt = {}; S.ringi.filter(isMine).forEach(r => cnt[r.type_id] = (cnt[r.type_id] || 0) + 1);
+  const dflt = ['有給休暇', '時間外勤務（事前の申請）', '物品購入', '一般の稟議'];
+  const rank = x => (cnt[x.id] || 0) * 100 + (dflt.includes(x.name) ? 10 - dflt.indexOf(x.name) : 0);
+  const fav = types.filter(x => rank(x) > 0).sort((a, b) => rank(b) - rank(a)).slice(0, 4);
+  const gid = g => 'tg' + GRP_ORDER.concat(groups).indexOf(g);
+  return `${pageHead('申請する', '出したい申請の種類を選んでください。ぜんぶの種類がこの画面に並んでいます。')}
   ${stepBar(1)}
-  <div class="typecols">${groups.map(g => `<section class="tgroup"><h2 class="tgh">${icon(GRP_ICON[g] || 'doc')}${esc(g)}</h2>
-    <ul class="typelist">${types.filter(x => (x.grp || 'その他') === g).map(x => `<li><button type="button" class="typeitem" data-type="${x.id}"><span class="x"><b>${esc(x.name)}</b><span>${esc((x.description || '').split('。')[0])}</span></span>${icon('chevr')}</button></li>`).join('')}</ul></section>`).join('')}</div>`;
+  ${fav.length ? `<section class="tfav"><h2 class="tfh">${icon('star')}よく使う</h2><ul class="favlist">${fav.map(x => `<li><button type="button" class="typeitem" data-type="${x.id}" title="${esc(x.description || '')}"><span class="x"><b>${esc(x.name)}</b><span>${esc((x.description || '').split('。')[0])}</span></span>${icon('chevr')}</button></li>`).join('')}</ul></section>` : ''}
+  <nav class="tjump" aria-label="申請の区分">${groups.map(g => `<a href="#${gid(g)}" data-jump="${gid(g)}">${icon(GRP_ICON[g] || 'doc')}${esc(g)}<i>${types.filter(x => gOf(x) === g).length}</i></a>`).join('')}</nav>
+  <div class="typerows">${groups.map(g => `<section class="tgroup" id="${gid(g)}"><h2 class="tgh">${icon(GRP_ICON[g] || 'doc')}${esc(g)}</h2>
+    <ul class="tsmall">${types.filter(x => gOf(x) === g).map(x => `<li><button type="button" class="tbtn" data-type="${x.id}" title="${esc(x.description || '')}">${esc(x.name)}</button></li>`).join('')}</ul></section>`).join('')}</div>`;
 }
 // 確かめる画面（出す前に、入れた内容と回る順番をまとめて見せる）
 function confirmHtml() {
@@ -1040,11 +1113,12 @@ function confirmHtml() {
   const rowsKv = [
     ['種類', esc(t.name)],
     ['申請者', `${esc(P(owner).name)}（${esc(P(owner).dept)}）${owner !== filer ? `<span class="sub">${esc(P(filer).name)}が代わりに申請</span>` : ''}`],
-    ...details.map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    ...details.filter(d => d.k !== 'summary').map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    ...(details.some(d => d.k === 'summary') ? [['数字のまとめ', '付ける（1枚）']] : []),
     ...(t.use_amount ? [['金額', amount != null ? `<b class="num">${yen(amount)}</b>` : '<span class="muted">なし</span>']] : []),
     ['件名', `<b>${esc($('#nfTitle').value.trim())}</b>`],
     ...($('#nfBody').value.trim() ? [[esc(t.body_label || '内容'), `<span class="pre">${esc($('#nfBody').value.trim())}</span>`]] : []),
-    ...($('#nfDue')?.value ? [['決裁の期限', `<span class="num">${md($('#nfDue').value)}</span>`]] : []),
+    ...($('#nfDue')?.value ? [[t.report ? '理事会の日' : '決裁の期限', `<span class="num">${md($('#nfDue').value)}</span>`]] : []),
     ['添付書類', S.pick.length ? S.pick.map(f => esc(f.name)).join('<br>') : (ed && filesOf(ed.id).length ? filesOf(ed.id).map(f => esc(f.name)).join('<br>') : '<span class="muted">なし</span>')],
   ];
   if (S.extraReady && t.name.startsWith('有給')) { const ls = leaveStat(owner, ed ? ed.id : null); const need = leaveDays(details);
@@ -1054,7 +1128,7 @@ function confirmHtml() {
   return `<div class="formcols"><section class="panel flush"><div class="panel-h"><h2>この内容で出します</h2></div>
     <table class="kvt">${rowsKv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
     <aside class="panel routebox"><h2>この順番で回ります</h2>${pr.length ? `<ol class="vflow">${pr.map(s => `<li><span class="vd"></span><div><span class="sub">${esc(s.label)}${s.all ? '（全員が確認）' : ''}</span><b>${esc(names(s.ids))}</b></div></li>`).join('')}</ol>
-    <p class="hint">${pr.length}つの段すべてで承認されると決裁です。出すと、最初の段の人にお知らせが届きます。</p>` : '<p class="hint">回る段がないため、出すとそのまま決裁になります。</p>'}</aside></div>`;
+    <p class="hint">${pr.length}つの段すべてで承認されると決裁です。出すと、最初の段の人にお知らせが届きます。</p>` : t.report ? `<p class="hint">決裁はありません。出すと、${esc(sanNames(S.posts.filter(p => (t.circ_posts || []).includes(p.id) && p.holder_id && p.holder_id !== owner).map(p => p.holder_id)))}に回覧し、「見た」とひとことをもらいます。見られるのは、出した人・見てもらう人・総務・事務長だけです。</p>` : '<p class="hint">回る段がないため、出すとそのまま決裁になります。</p>'}</aside></div>`;
 }
 
 // ---- 添付書類
@@ -1065,6 +1139,7 @@ const EXT = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword' };
 const ACCEPT = Object.keys(EXT).map(e => '.' + e).join(',') + ',image/*';
 const FILE_RULE = 'PDF・写真・Excel・Word、1つ10MBまで、10個まで';
+const canPeek = name => /\.(pdf|jpe?g|png|webp|xlsx|docx)$/i.test(name || '');
 const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
 function fileKind(f) {
   let ext = ((f.name || '').split('.').pop() || '').toLowerCase();
@@ -1072,20 +1147,25 @@ function fileKind(f) {
   return ext ? { ext: ext === 'jpeg' ? 'jpg' : ext, mime: EXT[ext] } : null;
 }
 // 選んだ書類を確かめて足す。だめなものは理由を出す。
-function acceptFiles(list, already) {
+async function acceptFiles(list, already) {
   const ok = [], bad = [];
   for (const f of list) {
-    if (!fileKind(f)) bad.push(`「${f.name}」はこの形の書類は付けられません（PDF・写真・Excel・Word）`);
+    const k = fileKind(f);
+    // 名前がだめなもの（マクロ入り・プログラム）は先に断る。大きさと数を見てから、中身を確かめる
+    const byName = BAD_EXT.test(f.name || '') ? await inspectFile(f, k || { ext: '' }).catch(() => null) : null;
+    if (byName) bad.push(`「${f.name}」は付けられません：${byName}`);
+    else if (!k) bad.push(`「${f.name}」はこの形の書類は付けられません（PDF・写真・Excel・Word）`);
     else if (f.size > MAX_FILE) bad.push(`「${f.name}」は大きすぎます（1つ10MBまで）`);
     else if (already + ok.length >= MAX_FILES) bad.push('添付は1件に10個までです');
-    else ok.push(f);
+    else { const why = await inspectFile(f, k).catch(() => null); if (why) bad.push(`「${f.name}」は付けられません：${why}`); else ok.push(f); }
   }
   if (bad.length) toast(bad[0]);
   return ok;
 }
 function renderPick() {
   const ul = $('#nfPick'); if (!ul) return;
-  ul.innerHTML = S.pick.map((f, i) => `<li>${icon(/^image/.test(fileKind(f)?.mime) ? 'img' : 'file')}<span class="fn">${esc(f.name)}</span><span class="fs num">${kb(f.size)}</span><button type="button" class="btn sm" data-a="unpick" data-i="${i}">外す</button></li>`).join('');
+  ul.innerHTML = S.pick.map((f, i) => `<li>${icon(/^image/.test(fileKind(f)?.mime) ? 'img' : 'file')}<span class="fn">${esc(f.name)}</span><span class="fs num">${kb(f.size)}</span>${canPeek(f.name) ? `<button type="button" class="btn sm text" data-a="hPeekPick" data-i="${i}">${icon('eye')}のぞく</button>` : ''}<button type="button" class="btn sm" data-a="unpick" data-i="${i}">外す</button></li>`).join('');
+  const pk = $('#peekPick'); if (pk && !S.pick.length) { pk.hidden = true; pk.innerHTML = ''; }
 }
 async function uploadFiles(rid, files) {
   let done = 0; const fails = [];
@@ -1118,6 +1198,7 @@ function formState() {
   if (ed) { owner = ed.owner_id; filer = ed.filer_id; }
   else if (px && t.allow_proxy && px.value) owner = px.value;
   const details = (t.fields || []).map(fd => ({ k: fd.k, label: fd.label, value: ($(`#fd_${fd.k}`)?.value || '').trim() })).filter(d => d.value);
+  if (t.report && !ed && $('#nfSum')?.checked && S.repNums) details.push({ k: 'summary', label: '数字のまとめ', value: JSON.stringify(S.repNums) });
   if (S.receipt && S.receipt.read && t.name === '経費の精算' && !ed) details.push({ k: 'ai', label: '領収書の読み取り', value: S.receipt.sample ? '見本の読み取り（AIは未接続）・本人が確かめた' : 'AIが読み取り・本人が確かめた' });
   return { ed, t, amount: Number.isFinite(amount) ? amount : null, owner, filer, details };
 }
@@ -1206,6 +1287,7 @@ function validateForm() {
   const miss = (t.fields || []).filter(fd => fd.required && !details.find(d => d.k === fd.k));
   if (miss.length) { toast(`「${miss[0].label}」を入れてください`); $(`#fd_${miss[0].k}`)?.focus(); return false; }
   if (!$('#nfTitle').value.trim()) { toast('件名を入れてください'); $('#nfTitle').focus(); return false; }
+  if (t.report && $('#nfDue') && !$('#nfDue').value) { toast('理事会の日を入れてください'); $('#nfDue').focus(); return false; }
   const { ed, owner } = formState();
   if (S.receipt && S.receipt.read && t.name === '経費の精算' && !ed && !$('#rcOk')?.checked) { toast('読み取った内容を領収書と見比べて、「確かめました」に印を付けてください'); $('#rcOk')?.focus(); return false; }
   if (t.name.startsWith('有給') && details.find(d => d.k === 'how')?.value === '時間単位') {
@@ -1242,15 +1324,16 @@ async function submitForm() {
   if (S.receipt && S.receipt.file && t.name === '経費の精算' && !S.pick.includes(S.receipt.file)) S.pick.push(S.receipt.file);
   const ok = await rpc('submit_ringi', args, id => {
     const c = routeOf(id)[0];
+    if (t.report) return `報告を出しました。${sanNames(S.circ.filter(x => x.ringi_id === id).map(x => x.staff_id))}に回覧しました`;
     return c ? `申請しました。いま${c.label}（${sanNames(c.approver_ids)}）の決裁待ちです` : '申請しました。回る段がないため、そのまま決裁になりました';
   });
-  if (ok) { S.open = ok.data; S.titleTouched = false; S.receipt = null; await afterSubmitFiles(ok.data); render(); window.scrollTo({ top: 0 }); }
+  if (ok) { S.open = ok.data; S.titleTouched = false; S.receipt = null; S.repNums = null; await afterSubmitFiles(ok.data); render(); window.scrollTo({ top: 0 }); }
 }
 
 // ---- 申請の中身
 function filesCard(r) {
   if (!S.filesReady) return '';
-  if (!canSeeFiles(r)) return `<section class="panel"><h2>添付書類</h2><p class="sub" style="margin:8px 0 0">添付書類を見られるのは、申請した人・回る先の人・総務だけです。</p></section>`;
+  if (!canSeeFiles(r)) return `<section class="panel"><h2>添付書類</h2><p class="sub" style="margin:8px 0 0">添付書類を見られるのは、申請した人・回る先の人・回覧された人・総務だけです。</p></section>`;
   const fs = filesOf(r.id), can = canChangeFiles(r);
   if (!fs.length && !can) return '';
   return `<section class="panel files"><div class="ph2"><h2>添付書類 <span class="sub">${fs.length}件</span></h2>
@@ -1258,8 +1341,10 @@ function filesCard(r) {
     ${fs.length ? `<ul class="filelist">${fs.map(f => `<li>${icon(/^image/.test(f.mime) ? 'img' : 'file')}
       <button type="button" class="fn link" data-a="viewFile" data-f="${f.id}">${esc(f.name)}</button>
       <span class="fs num">${kb(f.size)}・${esc(P(f.uploaded_by).name)}・${fmtDay(f.at)}</span>
+      ${canPeek(f.name) ? `<button type="button" class="btn sm text" data-a="hPeek" data-f="${f.id}">${icon('eye')}のぞく</button>` : ''}
       ${can && f.uploaded_by === S.me.id ? `<button type="button" class="btn sm" data-a="rmFile" data-f="${f.id}">外す</button>` : ''}</li>`).join('')}</ul>`
       : '<p class="sub" style="margin:0">まだありません。見積書やカタログ、写真などを付けられます。</p>'}
+    <div class="peek" id="peek" hidden></div>
     ${can ? `<p class="hint" style="margin:10px 0 0">${FILE_RULE}。付けたり外したりできるのは、まだだれも承認していない間と、差し戻されている間だけです。</p>` : ''}
   </section>`;
 }
@@ -1310,9 +1395,10 @@ function detail(r) {
     ['決裁日', decidedAt(r) ? `<span class="num">${fmtAt(decidedAt(r))}</span>` : '<span class="muted">—（まだ決裁されていません）</span>'],
     ...(r.due_date ? [['決裁の期限', `<span class="num">${md(r.due_date)}</span>${dueTag(r) ? ' ' + dueTag(r) : ''}`]] : []),
     ...(r.amount != null && t?.use_amount ? [['金額', `<b class="num">${yen(r.amount)}</b>`]] : []),
-    ...details.map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    ...details.filter(d => d.k !== 'summary').map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
     ...(r.body ? [[esc(t?.body_label || '内容'), `<span class="pre">${esc(r.body)}</span>`]] : []),
   ];
+  if (t?.report) { const i = kv.findIndex(x => x[0] === '決裁日'); if (i >= 0) kv.splice(i, 1); const j = kv.findIndex(x => x[0] === '決裁の期限'); if (j >= 0) kv[j][0] = '理事会の日'; }
   // 承認の流れ（申請 → 各段 → 決裁）を横に並べた図
   const stateOf = i => route[i].stamped_by ? 'done' : (c && i === r.stage) ? 'now' : ((r.status === 'back' || r.status === 'no') && i === r.stage) ? 'stop' : 'todo';
   const node = (st, mark, label, who, when, tag = '') => `<li class="${st}"><span class="fd">${mark}</span><div class="fb"><div class="fl">${label}${tag}</div><div class="fw">${who}</div>${when ? `<div class="ft num">${when}</div>` : ''}</div></li>`;
@@ -1332,31 +1418,33 @@ function detail(r) {
     <dl class="dfacts">
       <div><dt>申請者</dt><dd class="whowrap">${avatar(r.owner_id, 'sm')}${esc(owner.name)}<span class="sub">${esc(owner.dept)}</span></dd></div>
       <div><dt>申請日</dt><dd class="num">${fmtDay(r.created_at)}</dd></div>
-      <div><dt>決裁日</dt><dd class="num">${decidedAt(r) ? fmtDay(decidedAt(r)) : '—'}</dd></div>
+      ${t?.report ? '' : `<div><dt>決裁日</dt><dd class="num">${decidedAt(r) ? fmtDay(decidedAt(r)) : '—'}</dd></div>`}
       ${r.amount != null && t?.use_amount ? `<div><dt>金額</dt><dd class="num big">${yen(r.amount)}</dd></div>` : ''}
-      ${r.due_date ? `<div><dt>決裁の期限</dt><dd class="num">${md(r.due_date)}</dd></div>` : ''}
+      ${r.due_date ? `<div><dt>${t?.report ? '理事会の日' : '決裁の期限'}</dt><dd class="num">${md(r.due_date)}</dd></div>` : ''}
     </dl>
     <div class="dacts">
       ${t && t.in_use ? `<button class="btn sm" type="button" data-a="copy" data-id="${r.id}">${icon('copy')}写して新しく申請</button>` : ''}
-      <button class="btn sm" type="button" data-a="print">${icon('print')}紙の稟議書の形で印刷</button>
+      <button class="btn sm" type="button" data-a="print">${icon('print')}${t?.report ? '報告書を印刷（A4 1枚）' : '紙の稟議書の形で印刷（A4 1枚）'}</button>
+      ${repSummary(r) ? `<button class="btn sm" type="button" data-a="printSum">${icon('print')}数字のまとめを印刷（A4 1枚）</button>` : ''}
       ${wantsArrange(r) && r.status === 'ok' && (S.me.is_soumu || isOwner) ? `<button class="btn sm" type="button" data-a="printFax">${icon('plane')}業者への手配の依頼書（FAX）を印刷</button>` : ''}
       ${isOwner && ['wait', 'back'].includes(r.status) && S.flowReady ? `<button class="btn sm text danger" type="button" data-a="wdOpen" aria-expanded="${S.wdOpen}">${icon('undo')}取り下げる</button>` : ''}
     </div>
   </section>
-  <section class="panel"><h2>承認の流れ</h2>${flow}</section>
+  ${t?.report ? '' : `<section class="panel"><h2>承認の流れ</h2>${flow}</section>`}
   <div class="dgrid">
     <div class="dmain">
       ${action}
       <section class="panel flush"><div class="panel-h"><h2>申請の内容</h2></div>
         <table class="kvt">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table></section>
       ${budgetCard(r)}
+      ${repSummary(r) ? `<section class="panel"><h2>数字のまとめ（${esc(repSummary(r).ym.replace('-', '年'))}月・出したときの数字）</h2>${repSumHtml(repSummary(r))}</section>` : ''}
       ${filesCard(r)}
       ${buyCard(r)}
       ${circCard(r)}
-      <section class="panel"><h2>承認欄</h2>
+      ${t?.report ? '' : `<section class="panel"><h2>承認欄</h2>
         ${route.length ? `<div class="stamps">${route.map((s, i) => s.mode === 'all' ? s.approver_ids.map(x => { const g = S.signs.find(y => y.ringi_id === r.id && y.step_no === s.step_no && y.staff_id === x);
             return `<div class="gogi"><div class="hd">${esc(s.label)}<span>合議</span></div><div class="bx ${c && i === r.stage && !g ? 'now' : ''}">${g ? `<div class="hanko">${g.by_id !== x ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(x).name.split(' ')[0])}</span><span class="d">${fmtDay(g.at)}</span><span style="font-size:10px">確認</span></div>` : c && i === r.stage ? '確認待ち' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち'}</div><div class="ft">${esc(P(x).name)}${g && g.by_id !== x ? `<br>（${esc(P(g.by_id).name)}が代わり）` : ''}</div></div>`; }).join('') : `<div><div class="hd">${esc(s.label)}</div><div class="bx ${c && i === r.stage ? 'now' : ''}">${s.stamped_by ? `<div class="hanko">${s.proxy_for ? '<span class="dai">代</span>' : ''}<span class="n">${esc(P(s.stamped_by).name.split(' ')[0])}</span><span class="d">${fmtDay(s.stamped_at)}</span><span style="font-size:10px">承認</span></div>` : (c && i === r.stage ? '決裁待ち<br>いまの番' : (r.status === 'back' || r.status === 'no') && i === r.stage ? (r.status === 'back' ? '差し戻し' : '却下') : '順番待ち')}</div><div class="ft">${s.proxy_for ? `${esc(P(s.stamped_by).name)}<br>（${esc(P(s.proxy_for).name)}の代わり）` : `${esc(names(s.approver_ids))}${s.approver_ids.length > 1 ? '<br>（どなたか1人）' : ''}`}</div></div>`).join('')}</div>` : '<p class="sub" style="margin:0">回る段がないため、出したときにそのまま決裁になりました。</p>'}
-      </section>
+      </section>`}
     </div>
     <aside class="dside">
       <section class="panel"><h2>やり取りの記録</h2><ul class="timeline">
@@ -1365,7 +1453,7 @@ function detail(r) {
       </ul></section>
     </aside>
   </div>
-  ${printDoc(r)}${faxDoc(r)}`;
+  ${printDoc(r)}${faxDoc(r)}${sumDoc(r)}`;
 }
 
 // 申請の画面の「予算」（お金・購入のとき）。決裁する人が、部署の予算の残りを見て判断できるように。
@@ -1397,21 +1485,28 @@ function printDoc(r) {
     : [cell(s.label, s.stamped_by ? hk(s.stamped_by, s.stamped_at, !!s.proxy_for) : '',
     s.stamped_by ? esc(P(s.stamped_by).name) + (s.proxy_for ? `<br>（${esc(P(s.proxy_for).name)}の代わり）` : '') : esc(names(s.approver_ids)))]);
   cells.push(cell('申請者', hk(r.owner_id, r.created_at, false), esc(owner.name)));
+  const circ = S.flowReady ? S.circ.filter(c => c.ringi_id === r.id).sort((a, b) => a.id - b.id) : [];
+  const ccells = circ.map(c => cell('回覧', c.seen_at ? `<div class="hanko seen"><span class="n">${esc(P(c.staff_id).name.split(' ')[0])}</span><span class="d">${fmtDay(c.seen_at)}</span><span class="m">見</span></div>` : '', esc(P(c.staff_id).name)));
+  const cw = n => `--cw:${Math.min(24, Math.floor(178 / Math.max(1, n)))}mm`;
+  const report = !!t?.report;
   const kv = [
     ['件名', `<b>${esc(r.title)}</b>`], ['種類', esc(r.type_name)],
     ['申請者', `${esc(owner.name)}（${esc(owner.dept)}・${esc(titleOf(owner))}）${r.filer_id !== r.owner_id ? `　${esc(P(r.filer_id).name)}が代わりに申請` : ''}`],
     ...(r.amount != null && t?.use_amount ? [['金額', `<b>${yen(r.amount)}</b>`]] : []),
-    ...(r.details || []).map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    ...(r.details || []).filter(d => d.k !== 'summary').map(d => [esc(d.label), esc(/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? md(d.value) : d.value)]),
+    ...(r.due_date ? [[report ? '理事会の日' : '決裁の期限', md(r.due_date)]] : []),
     [esc(t?.body_label || '内容'), `<span class="pre">${esc(r.body || '')}</span>`],
+    ...(circ.some(c => c.comment) ? [['見た人のひとこと', circ.filter(c => c.comment).map(c => `${esc(P(c.staff_id).name)}：「${esc(c.comment)}」`).join('<br>')]] : []),
     ['添付書類', filesOf(r.id).length ? filesOf(r.id).map(f => esc(f.name)).join('、') : 'なし'],
-    ['状況', `${STL[r.status] || ''}${decidedAt(r) ? `（${fmtAt(decidedAt(r))} 決裁）` : ''}`],
+    ['状況', report ? `報告（${circ.filter(c => c.seen_at).length}/${circ.length}人が見た）` : `${STL[r.status] || ''}${decidedAt(r) ? `（${fmtAt(decidedAt(r))} 決裁）` : ''}`],
   ];
   const cm = logOf(r.id).filter(l => l.comment);
   const d = new Date(Date.parse(r.created_at)); const dd = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric' }).format(d);
   return `<section class="printdoc pmain" aria-hidden="true">
     <div class="pdtop"><div class="pdno">申請番号 ${no(r)}<br>申請日 ${dd}</div></div>
-    <div class="pdtitle">稟 議 書</div>
-    <table class="pstamp"><tr>${cells.join('')}</tr></table>
+    <div class="pdtitle">${report ? '報 告 書' : '稟 議 書'}</div>
+    ${report ? '' : `<table class="pstamp" style="${cw(cells.length)}"><tr>${cells.join('')}</tr></table>`}
+    ${ccells.length ? `<div class="pdcirc"><span>${report ? '見た人（回覧）' : '回覧'}</span><table class="pstamp pcirc" style="${cw(ccells.length + 1)}"><tr>${ccells.join('')}</tr></table></div>` : ''}
     <table class="pkv">${kv.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
     ${cm.length ? `<div class="pdh2">意見・コメント</div><ul class="pcm">${cm.map(l => `<li>${esc(l.text)}（${fmtAt(l.at)}）：「${esc(l.comment)}」</li>`).join('')}</ul>` : ''}
     <p class="pfoot">稟議・申請（お試し版）から印刷　${new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}　※架空のデータです</p>
@@ -1648,20 +1743,25 @@ const isShisetsu = () => inDeptName(S.me.id, '施設課');
 function circCard(r) {
   if (!S.flowReady) return '';
   const list = S.circ.filter(c => c.ringi_id === r.id).sort((a, b) => a.id - b.id);
-  const canAdd = isMine(r) || S.me.is_soumu || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id);
+  const rep = isReport(r);
+  const canAdd = rep ? S.me.is_soumu : isMine(r) || S.me.is_soumu || routeOf(r.id).some(x => x.approver_ids.includes(S.me.id) || x.stamped_by === S.me.id);
   if (!list.length && !canAdd) return '';
   const mine = list.find(c => c.staff_id === S.me.id);
   const cand = S.staff.filter(x => !list.some(c => c.staff_id === x.id) && x.id !== r.owner_id);
   return `<section class="panel circ" id="circ"><div class="ph2"><h2>回覧 <span class="sub">${list.filter(c => c.seen_at).length}/${list.length}人が見ました</span></h2></div>
-    <p class="sub" style="margin:4px 0 10px">決裁には加わらず、内容を知っておいてほしい人に回します。読んだら「見た」を押してもらいます。</p>
-    ${mine && !mine.seen_at ? `<div class="infobox">${icon('eye')}<div><b>この申請はあなたに回覧されています</b><span class="sub">中身を読んだら「見た」を押してください。</span></div><button class="btn primary" type="button" data-a="circSeen" data-id="${r.id}">${icon('check')}見た</button></div>` : ''}
+    <p class="sub" style="margin:4px 0 10px">${rep ? '理事長と経理課長に回っています。それぞれ「見た」とひとことを返します。理事会の2日前から、まだの人にお知らせが届きます。' : '決裁には加わらず、内容を知っておいてほしい人に回します。読んだら「見た」を押してもらいます。'}</p>
+    ${mine && !mine.seen_at ? (rep ? `<div class="infobox col">${icon('eye')}<div><b>理事への報告です。読んだら「見た」を押してください</b><span class="sub">${r.due_date ? `${md(r.due_date)}（理事会）までにお願いします。` : ''}ひとことを残せます（なくても大丈夫です）。</span>
+        <label class="f" style="margin-top:8px"><span class="vh">ひとこと</span><textarea id="circCm" rows="2" maxlength="300" placeholder="例：了解しました。理事会で質問します"></textarea></label></div>
+        <button class="btn primary" type="button" data-a="circSeen" data-id="${r.id}">${icon('check')}見た</button></div>`
+      : `<div class="infobox">${icon('eye')}<div><b>この申請はあなたに回覧されています</b><span class="sub">中身を読んだら「見た」を押してください。</span></div><button class="btn primary" type="button" data-a="circSeen" data-id="${r.id}">${icon('check')}見た</button></div>`) : ''}
     ${list.length ? `<ul class="circlist">${list.map(c => `<li>${avatar(c.staff_id, 'sm')}<span class="cn">${esc(P(c.staff_id).name)}<span class="sub">${esc(P(c.staff_id).dept)}</span></span>
-      ${c.seen_at ? `<span class="lbl ok">${icon('check')}見た ${fmtAt(c.seen_at)}</span>` : '<span class="lbl wait">まだ</span>'}</li>`).join('')}</ul>` : ''}
+      ${c.seen_at ? `<span class="lbl ok">${icon('check')}見た ${fmtAt(c.seen_at)}</span>` : '<span class="lbl wait">まだ</span>'}${c.comment ? `<span class="ccm">「${esc(c.comment)}」</span>` : ''}</li>`).join('')}</ul>` : ''}
     ${canAdd ? `<div class="row circadd"><label class="f"><span class="vh">回覧する人</span><select id="circWho"><option value="">回覧する人を選ぶ</option>${cand.map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}・${esc(titleOf(x))}）</option>`).join('')}</select></label>
       <button class="btn" type="button" data-a="circAdd" data-id="${r.id}">${icon('eye')}回覧に回す</button></div>` : ''}
   </section>`;
 }
 const myCirc = () => S.flowReady ? S.circ.filter(c => c.staff_id === S.me.id && !c.seen_at).map(c => R(c.ringi_id)).filter(Boolean) : [];
+const isReport = r => !!T(r.type_id)?.report;
 
 // 購入の進み：決裁 → 発注 → 納品 → 請求書 → 支払い
 const BUY_STEPS = [['order', '発注', 'ordered_on'], ['deliver', '納品', 'delivered_on'], ['invoice', '請求書', 'invoiced_on'], ['pay', '支払い', 'paid_on']];
@@ -1708,10 +1808,28 @@ function faxDoc(r) {
     <p class="pfoot">稟議・申請（お試し版）から印刷　※架空の依頼書です。実際には送らないでください</p>
   </section>`;
 }
+// 印刷の紙を、必ずA4 1枚に収める（長いときは全体を少し小さくする）
+const MM = 96 / 25.4;
+function fitPrint(el) {
+  if (!el) return;
+  el.style.zoom = '';
+  const box = el.cloneNode(true);
+  box.removeAttribute('aria-hidden');
+  Object.assign(box.style, { display: 'block', position: 'absolute', left: '-10000px', top: '0', width: `${182 * MM}px`, visibility: 'hidden', zoom: '1' });
+  box.classList.add('measure');
+  document.body.appendChild(box);
+  const h = box.scrollHeight;
+  box.remove();
+  const z = Math.min(1, (262 * MM) / Math.max(1, h));
+  el.style.zoom = z < 1 ? String(Math.floor(z * 1000) / 1000) : '';
+  el.dataset.fit = z < 1 ? Math.round(z * 100) + '%' : '100%';
+}
 function doPrint(kind) {
   document.body.classList.toggle('pr-fax', kind === 'fax');
+  document.body.classList.toggle('pr-sum', kind === 'sum');
+  fitPrint($(kind === 'fax' ? '.printdoc.fax' : kind === 'sum' ? '.printdoc.psum' : '.printdoc.pmain'));
   // 印刷の画面を閉じたら元に戻す（すぐ戻ると、印刷を待たない端末で別の紙が出るため）
-  const off = () => { document.body.classList.remove('pr-fax'); window.removeEventListener('afterprint', off); };
+  const off = () => { document.body.classList.remove('pr-fax', 'pr-sum'); window.removeEventListener('afterprint', off); };
   window.addEventListener('afterprint', off);
   window.print();
 }
@@ -2128,8 +2246,9 @@ document.addEventListener('click', async e => {
   if (d.otwho) { const x = P(d.otwho); S.teamDept = x.dept_id; S.teamWho = x.id; S.view = 'team'; S.open = null; render(); setTimeout(() => $('#teamWho')?.scrollIntoView({ block: 'start' }), 0); return; }
   const a = d.a; if (!a) return;
   if (a === 'printFax') { doPrint('fax'); return; }
+  if (a === 'printSum') { doPrint('sum'); return; }
   if (a === 'goBul') { S.view = 'board'; S.open = null; S.notesOpen = false; S.moreOpen = false; render(); setTimeout(() => { const el = $('#bul' + d.b); if (el) el.scrollIntoView({ block: 'start' }); }, 0); return; }
-  if (a === 'circSeen') { await rpc('circ_seen', { p_id: +d.id }, '「見た」の印を押しました'); return; }
+  if (a === 'circSeen') { const cm = $('#circCm')?.value || null; await rpc('circ_seen', cm ? { p_id: +d.id, p_comment: cm } : { p_id: +d.id }, '「見た」の印を押しました'); return; }
   if (a === 'circAdd') { const who = $('#circWho')?.value; if (!who) { toast('回覧する人を選んでください'); return; } await rpc('circ_add', { p_id: +d.id, p_staff: who }, `${P(who).name}さんに回覧しました`); return; }
   if (a === 'wdOpen') { S.wdOpen = !S.wdOpen; render(); if (S.wdOpen) setTimeout(() => $('#wdReason')?.focus(), 0); return; }
   if (a === 'withdraw') { const ok = await rpc('withdraw_ringi', { p_id: +d.id, p_reason: ($('#wdReason')?.value || '').trim() || null }, '取り下げました。回っていた先の人にも知らせます'); if (ok) S.wdOpen = false; return; }
@@ -2238,11 +2357,13 @@ document.addEventListener('click', async e => {
     const spot = e.target.closest('[data-drop]');
     if (spot) { orgDrop(S.orgPick.person, parseSpot(S.orgPick.from), parseSpot(spot.dataset.drop)); return; }
   }
+  const jl = e.target.closest('[data-jump]');
+  if (jl) { e.preventDefault(); document.getElementById(jl.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const t = e.target.closest('button,[data-open],[data-a],[data-nav],[data-who]'); if (!t || t.disabled) return;
   const d = t.dataset;
   if (t.id === 'logout') { await sb.auth.signOut(); S.me = null; loginView(); return; }
   if (t.id === 'bell') { S.notesOpen = !S.notesOpen; renderNotes(); return; }
-  if (d.nav) { if (d.lf) S.listFilter = d.lf; S.moreOpen = false; go(d.nav); return; }
+  if (d.nav) { if (d.lf) S.listFilter = d.lf; S.moreOpen = false; go(d.nav); if (d.to) setTimeout(() => document.getElementById(d.to)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); return; }
   if (d.lf) { S.listFilter = d.lf; render(); return; }
   if (d.type) { S.newType = +d.type; S.step = 2; S.titleTouched = false; S.pick = []; render(); window.scrollTo({ top: 0 }); return; }
   if (d.ibt) { S.inboxTab = d.ibt; S.sel.clear(); render(); return; }
@@ -2271,6 +2392,7 @@ document.addEventListener('click', async e => {
   if (a === 'punch') {
     const sh = +($('#pcShift')?.value || 0) || null;
     const bv = $('#pcBreak')?.value; const args = { p_shift: sh }; if (bv) args.p_break = +bv;
+    if (S.hrReady && $('#pcGeo')?.checked) { const g = await getPlace(); if (g) Object.assign(args, g); }
     await rpc('punch', args, x => x && x.kind === 'out' ? `退勤しました（${hmOf(Date.parse(x.at))}）。おつかれさまでした` : `出勤しました（${hmOf(Date.parse(x.at))}）`);
     return;
   }
@@ -2384,9 +2506,9 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.classList.contains('bk')) { const id = +el.dataset.id; if (el.checked) S.sel.add(id); else S.sel.delete(id); render(); return; }
-  if (el.id === 'nfFiles') { S.pick.push(...acceptFiles([...el.files], S.pick.length + (S.edit ? filesOf(S.edit).length : 0))); el.value = ''; renderPick(); return; }
+  if (el.id === 'nfFiles') { S.pick.push(...await acceptFiles([...el.files], S.pick.length + (S.edit ? filesOf(S.edit).length : 0))); el.value = ''; renderPick(); return; }
   if (el.id === 'dfFiles') {
-    const rid = +el.dataset.id; const files = acceptFiles([...el.files], filesOf(rid).length); el.value = '';
+    const rid = +el.dataset.id; const files = await acceptFiles([...el.files], filesOf(rid).length); el.value = '';
     if (!files.length || S.busy) return;
     S.busy = true; toast('書類を付けています…');
     try {
@@ -2409,6 +2531,772 @@ setInterval(async () => {
     if (typing) renderBell(); else render();
   } catch (_) { /* つながらないときは次の回に */ }
 }, 30000);
+
+// ---------------------------------------------------------------- 人事・手続き
+//  有給の年5日と自動付与・休みの希望・打刻の場所・カード（FeliCa）での打刻とログイン・打刻用の端末・
+//  入職と退職の手続き・雇用契約の電子サイン・資格と免許・職員アンケート・ストレスチェック・
+//  理事への報告の数字のまとめ・添付書類の中身の確かめと「のぞく」
+// どれも仮の値。中身はすべて架空。
+
+Object.assign(ICON, {
+  card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6 15h4"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
+  badge: '<circle cx="12" cy="9" r="5"/><path d="M8.5 13 7 21l5-3 5 3-1.5-8"/>',
+  heart: '<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>',
+  form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r=".8"/>',
+});
+
+const HR = { wishKind: '休み' };
+const isStressDoc = () => S.hrRoles.some(x => x.staff_id === S.me.id && x.role === 'stress');
+const myHr = id => S.hr.find(x => x.staff_id === id);
+const futureHire = id => { const h = myHr(id); return h && h.hired_on > todayYmd(); };
+const surveyFor = v => v.dept_id == null || deptChain(P(S.me.id).dept_id).includes(v.dept_id) || S.posts.some(p => p.holder_id === S.me.id && deptChain(p.dept_id).includes(v.dept_id));
+const surveyOpen = v => !v.closed && (!v.until_d || v.until_d >= todayYmd());
+const svAnswered = v => S.svDone.some(x => x.survey_id === v.id && x.staff_id === S.me.id);
+const stressRun = () => S.stressRuns.find(r => r.open_from <= todayYmd() && r.open_until >= todayYmd());
+const myStress = run => run && S.stress.find(x => x.run_id === run.id && x.staff_id === S.me.id);
+const daysTo = ymd => Math.round((atOf(ymd, '12:00') - atOf(todayYmd(), '12:00')) / DAY);
+
+// ---------------------------------------------------------------- メニュー
+function hrNav(b) {
+  const pend = S.procs.filter(p => (p.staff_id === S.me.id && p.status === 'input') || (S.me.is_soumu && p.status === 'check')).length;
+  const sign = S.contracts.filter(c => c.staff_id === S.me.id && c.status === 'sent').length;
+  const lic = S.lics.filter(l => l.staff_id === S.me.id && l.expires_on && daysTo(l.expires_on) <= 30).length;
+  const sv = S.surveys.filter(v => surveyOpen(v) && surveyFor(v) && !svAnswered(v)).length;
+  const run = stressRun();
+  const st = run && !myStress(run) && !futureHire(S.me.id) ? 1 : 0;
+  const bd = (n, t) => n ? `<span class="badge warn" title="${t}">${n}</span>` : '';
+  return `<div class="ngroup">人事・手続き</div>
+    ${S.procs.some(p => p.staff_id === S.me.id) || S.me.is_soumu ? b('hr', '入職・退職の手続き', 'user', bd(pend, 'やること')) : ''}
+    ${S.contracts.some(c => c.staff_id === S.me.id) || S.me.is_soumu ? b('contracts', '雇用契約', 'pen', bd(sign, '同意を待っている契約')) : ''}
+    ${b('lics', '資格・免許', 'badge', bd(lic, '期限が近い'))}
+    ${b('survey', 'アンケート', 'form', bd(sv, 'まだ答えていない'))}
+    ${S.stressRuns.length ? b('stress', 'ストレスチェック', 'heart', bd(st, 'まだ受けていない')) : ''}`;
+}
+
+// 上の帯の「読んでほしい」「期限が近い」に足すもの
+window.EXTRA_READ = [() => {
+  if (!S.hrReady) return [];
+  const out = [];
+  S.contracts.filter(c => c.staff_id === S.me.id && c.status === 'sent').forEach(c => out.push({ ic: 'pen', kind: '契約', title: c.title, attr: `data-a="goLink" data-link="contract:${c.id}"`, sub: '読んで、同意するときは名前を入れる' }));
+  S.procs.filter(p => p.staff_id === S.me.id && p.status === 'input').forEach(p => out.push({ ic: 'user', kind: p.kind + 'の手続き', title: `${p.kind}の手続き（${md(p.due_d)}）`, attr: `data-a="goLink" data-link="hr:${p.id}"`, sub: p.back_note ? '総務から直してほしいことがあります' : '住所・連絡先などを入れる' }));
+  if (S.me.is_soumu) S.procs.filter(p => p.status === 'check').forEach(p => out.push({ ic: 'user', kind: p.kind + 'の手続き', title: `${P(p.staff_id).name}さんの${p.kind}の手続き`, attr: `data-a="goLink" data-link="hr:${p.id}"`, sub: '本人が出しました。確かめる' }));
+  S.surveys.filter(v => surveyOpen(v) && surveyFor(v) && !svAnswered(v)).forEach(v => out.push({ ic: 'form', kind: 'アンケート', title: v.title, attr: `data-a="goLink" data-link="survey:${v.id}"`, sub: v.until_d ? `${md(v.until_d)}まで・名前は残りません` : '名前は残りません' }));
+  const run = stressRun();
+  if (run && !myStress(run) && !futureHire(S.me.id)) out.push({ ic: 'heart', kind: 'ストレスチェック', title: run.title, attr: `data-a="goLink" data-link="stress:${run.id}"`, sub: `${md(run.open_until)}まで・結果は本人と実施者だけ` });
+  return out;
+}];
+window.EXTRA_DUE = [() => {
+  if (!S.hrReady) return [];
+  const out = [];
+  S.lics.filter(l => l.staff_id === S.me.id && l.expires_on && daysTo(l.expires_on) <= 30).forEach(l => out.push({ ic: 'badge', kind: '資格・免許', title: l.name, attr: `data-a="goLink" data-link="license:${l.id}"`, left: daysTo(l.expires_on), sub: `期限 ${md(l.expires_on)}` }));
+  const wm = openWishMonth();
+  if (wm && daysTo(wm.deadline) <= 3 && P(S.me.id).dept && /病棟/.test(P(S.me.id).dept) && !S.wishes.some(w => w.staff_id === S.me.id && w.day.startsWith(wm.ym)))
+    out.push({ ic: 'cal', kind: '休みの希望', title: `${monthLabel(wm.ym)}の休みの希望`, attr: 'data-a="goLink" data-link="leave"', left: daysTo(wm.deadline), sub: `締め切り ${md(wm.deadline)}` });
+  S.surveys.filter(v => surveyOpen(v) && surveyFor(v) && !svAnswered(v) && v.until_d && daysTo(v.until_d) <= 3).forEach(v => out.push({ ic: 'form', kind: 'アンケート', title: v.title, attr: `data-a="goLink" data-link="survey:${v.id}"`, left: daysTo(v.until_d), sub: `締め切り ${md(v.until_d)}` }));
+  return out;
+}];
+
+// ---------------------------------------------------------------- 打刻の場所
+const geoPref = () => { try { return localStorage.getItem('ringi_geo') === '1'; } catch (_) { return false; } };
+function getPlace() {
+  return new Promise(res => {
+    if (!navigator.geolocation) { toast('この端末では場所が分かりません。場所なしで打刻します'); res(null); return; }
+    navigator.geolocation.getCurrentPosition(p => res({ p_lat: +p.coords.latitude.toFixed(6), p_lng: +p.coords.longitude.toFixed(6), p_acc: Math.round(p.coords.accuracy || 0) }),
+      () => { toast('場所を使えませんでした（場所の使用を許可していない など）。場所なしで打刻します'); res(null); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+  });
+}
+function placeTags(w) {
+  const t = [];
+  const one = (pl, io) => pl ? `<span class="lbl ${/^院外/.test(pl) ? 'wait' : 'line'} sm" title="${io}の場所">${icon('pin')}${io} ${esc(pl.replace(/（.*$/, '').replace(/^院外/, '院外'))}${/^院外/.test(pl) ? esc(pl.replace(/^院外/, '')) : ''}</span>` : '';
+  if (w.in_place) t.push(one(w.in_place, '出勤'));
+  if (w.out_place && w.out_place !== w.in_place) t.push(one(w.out_place, '退勤'));
+  if (/カード/.test(w.via || '')) t.push(`<span class="lbl line sm">${icon('card')}カード</span>`);
+  return t;
+}
+
+// ---------------------------------------------------------------- 休みの希望
+const WISH_KINDS = [['休み', '休'], ['午前休み', '前'], ['午後休み', '後'], ['日勤だけ', '日'], ['夜勤できない', '夜×']];
+const wishShort = k => (WISH_KINDS.find(x => x[0] === k) || [k, k])[1];
+const openWishMonth = () => S.wishMonths.filter(w => !w.closed && w.deadline >= todayYmd()).sort((a, b) => a.ym.localeCompare(b.ym))[0];
+function wishPanel() {
+  const wm = HR.wishYm ? S.wishMonths.find(w => w.ym === HR.wishYm) : openWishMonth();
+  const all = S.wishMonths.slice().sort((a, b) => a.ym.localeCompare(b.ym));
+  if (!wm) return all.length ? '' : '';
+  const open = !wm.closed && wm.deadline >= todayYmd();
+  const mine = S.wishes.filter(w => w.staff_id === S.me.id && w.day.startsWith(wm.ym));
+  const offN = mine.filter(w => w.kind === '休み').length;
+  const days = monthDays(wm.ym);
+  const first = new Date(`${days[0]}T12:00:00+09:00`).getDay();
+  const cells = [...Array(first).fill('<div class="wc pad"></div>'), ...days.map(d => {
+    const w = mine.find(x => x.day === d); const wd = new Date(`${d}T12:00:00+09:00`).getDay();
+    return `<button type="button" class="wc ${w ? 'on k' + WISH_KINDS.findIndex(x => x[0] === w.kind) : ''} ${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}" data-a="hWish" data-day="${d}" ${open ? '' : 'disabled'} aria-label="${md(d)} ${w ? w.kind : '希望なし'}"><span class="wd num">${+d.slice(8)}</span>${w ? `<span class="wk">${esc(wishShort(w.kind))}</span>` : ''}</button>`; })];
+  return `<section class="panel wish" id="wishPanel"><div class="ph2"><h2>休みの希望（${monthLabel(wm.ym)}）</h2>
+    ${all.length > 1 ? `<div class="row">${all.map(x => `<button type="button" class="btn sm ${x.ym === wm.ym ? 'primary' : ''}" data-a="hWishYm" data-ym="${x.ym}">${monthLabel(x.ym)}</button>`).join('')}</div>` : ''}</div>
+    <p class="sub" style="margin:4px 0 10px">${open ? `<b>${md(wm.deadline)}まで</b>に出してください（あと${daysTo(wm.deadline)}日）。種類を選んでから、日にちを押します。もう一度押すと消えます。「休み」は月に${wm.max_off}日まで（仮）。` : `締め切りました（${md(wm.deadline)}）。変えたいときは所属長に相談してください。`}</p>
+    ${open ? `<div class="wkinds" role="radiogroup" aria-label="希望の種類">${WISH_KINDS.map(([k, s], i) => `<button type="button" class="wkb k${i} ${HR.wishKind === k ? 'sel' : ''}" role="radio" aria-checked="${HR.wishKind === k}" data-a="hWishKind" data-k="${k}"><span>${s}</span>${k}</button>`).join('')}</div>` : ''}
+    <div class="wcal">${WEEK.map((w, i) => `<div class="wh ${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('')}${cells.join('')}</div>
+    <p class="small muted" style="margin:10px 0 0">いま：「休み」${offN}日／${wm.max_off}日・ほかの希望 ${mine.length - offN}日。希望は勤務表を作る人（所属長）が見ます。必ず通るものではありません。</p>
+  </section>`;
+}
+function teamWishPanel() {
+  const wm = HR.wishYm ? S.wishMonths.find(w => w.ym === HR.wishYm) : (openWishMonth() || S.wishMonths.slice().sort((a, b) => b.ym.localeCompare(a.ym))[0]);
+  if (!wm) return '';
+  const people = S.staff.filter(s => s.dept_id === S.teamDept);
+  const days = monthDays(wm.ym);
+  const ws = S.wishes.filter(w => w.day.startsWith(wm.ym));
+  const cnt = d => ws.filter(w => w.day === d && w.kind === '休み' && people.some(p => p.id === w.staff_id)).length;
+  return `<section class="panel flush wishteam"><div class="panel-h"><h2>休みの希望（${monthLabel(wm.ym)}・締め切り ${md(wm.deadline)}）</h2>
+    <div class="row"><button class="btn sm" type="button" data-a="hWishCsv">${icon('down')}勤務表のソフトへ（CSV）</button>${S.me.is_soumu || S.me.is_boss ? `<button class="btn sm" type="button" data-a="hWishClose" data-ym="${wm.ym}" ${wm.closed ? 'disabled' : ''}>${wm.closed ? '締め切りました' : '締め切る'}</button>` : ''}</div></div>
+    <div class="wgrid"><table><thead><tr><th>名前</th>${days.map(d => { const wd = new Date(`${d}T12:00:00+09:00`).getDay(); return `<th class="${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}">${+d.slice(8)}<small>${WEEK[wd]}</small></th>`; }).join('')}<th>休</th></tr></thead>
+    <tbody>${people.map(p => `<tr><th>${esc(p.name)}</th>${days.map(d => { const w = ws.find(x => x.staff_id === p.id && x.day === d); return `<td class="${w ? 'k' + WISH_KINDS.findIndex(x => x[0] === w.kind) : ''}" title="${w ? esc(w.kind + (w.note ? '：' + w.note : '')) : ''}">${w ? esc(wishShort(w.kind)) : ''}</td>`; }).join('')}<td class="num">${ws.filter(w => w.staff_id === p.id && w.kind === '休み').length}</td></tr>`).join('')}
+      <tr class="sum"><th>「休み」の人数</th>${days.map(d => `<td class="num ${cnt(d) >= 3 ? 'many' : ''}">${cnt(d) || ''}</td>`).join('')}<td></td></tr></tbody></table></div>
+    <p class="small muted pfoot">同じ日に「休み」の希望が3人以上の日に色を付けています（仮）。CSV は、外部の勤務表のソフトに取り込める形（氏名・職員番号・日・希望）です。</p></section>`;
+}
+function wishCsv() {
+  const wm = HR.wishYm ? S.wishMonths.find(w => w.ym === HR.wishYm) : (openWishMonth() || S.wishMonths[0]);
+  if (!wm) return;
+  const people = S.staff.filter(s => s.dept_id === S.teamDept);
+  const lines = S.wishes.filter(w => w.day.startsWith(wm.ym) && people.some(p => p.id === w.staff_id)).sort((a, b) => a.day.localeCompare(b.day))
+    .map(w => [P(w.staff_id).name, P(w.staff_id).staff_no || '', w.day, w.kind, (w.note || '').replace(/[\r\n,]/g, ' ')].join(','));
+  const blob = new Blob(['﻿' + ['氏名,職員番号,日,希望,ひとこと', ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `kibou_${wm.ym}.csv`; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ---------------------------------------------------------------- 有給：年5日の見張りと自動付与（勤怠の見張りの下に足す）
+function leave5Panel() {
+  if (!S.hrReady || !S.extraReady) return '';
+  const ppl = watchPeople().map(p => [p, leaveStat(p.id)]).filter(([, ls]) => ls && ls.granted >= 10);
+  const lim = ls => { const a = addDays(ls.g.from_d, 365); return a < ls.g.to_d ? addDays(a, -1) : ls.g.to_d; };
+  const short = ppl.filter(([, ls]) => ls.taken < 5).sort((a, b) => lim(a[1]).localeCompare(lim(b[1])) || a[1].taken - b[1].taken);
+  const logs = S.leaveLog.slice().sort((a, b) => b.id - a.id).slice(0, 8);
+  return `<section class="panel flush"><div class="panel-h"><h2>有給の年5日（まだ5日に届いていない人）</h2><span class="sub">10日以上付いた人は、付いた日から1年のうちに5日取ることが決まっています</span></div>
+    ${short.length ? `<table class="dtable"><thead><tr><th>名前</th><th>部署</th><th>取った日数</th><th>期限</th><th>あと</th></tr></thead><tbody>
+      ${short.map(([p, ls]) => `<tr><td>${esc(p.name)}</td><td>${esc(p.dept)}</td><td class="num">${bar(Math.min(5, ls.taken), 0, 5)} ${dtxt(ls.taken)}/5日</td><td class="num">${md(lim(ls))}（あと${daysTo(lim(ls))}日）</td><td><span class="lbl ${daysTo(lim(ls)) <= 60 ? 'back' : 'wait'}">${dtxt(5 - ls.taken)}日</span></td></tr>`).join('')}</tbody></table>`
+      : `<p class="sub pfoot">みんな5日に届いています。</p>`}
+    <p class="small muted pfoot">期限まで5か月を切ると本人と所属長に知らせ、2か月を切るともう一度知らせます（仮の値）。</p></section>
+  <section class="panel flush"><div class="panel-h"><h2>有給の自動付与の記録</h2><span class="sub">入職から6か月で10日、そのあとは毎年4月1日に勤続の長さに合わせて付けます（仮）</span></div>
+    ${logs.length ? `<ul class="mini">${logs.map(l => `<li>${avatar(l.staff_id, 'sm')}<div class="x"><b>${esc(P(l.staff_id).name)}さんに ${dtxt(+l.granted)}日（${esc(l.note)}）</b><span class="num">${fmtAt(l.at)}・${md(l.from_d)}〜${md(l.to_d)}に使える${+l.carried ? `・繰り越し ${dtxt(+l.carried)}日` : ''}${+l.dropped ? `・消えた分 ${dtxt(+l.dropped)}日` : ''}</span></div></li>`).join('')}</ul>` : `<p class="sub pfoot">まだ自動で付けた記録はありません。</p>`}</section>`;
+}
+{
+  const ot0 = VIEWS.ot;
+  VIEWS.ot = function () { const h = ot0(); return S.flowReady && (S.me.is_soumu || S.me.is_boss) ? h + leave5Panel() : h; };
+  const team0 = VIEWS.team;
+  VIEWS.team = function () { const h = team0(); return S.hrReady && S.workReady && canTeam() ? h + teamWishPanel() : h; };
+  const work0 = VIEWS.work;
+  VIEWS.work = function () { const h = work0(); return S.hrReady && S.workReady ? h + cardPinPanel() : h; };
+}
+
+// ---------------------------------------------------------------- FeliCa（PaSoRi RC-S300 を WebUSB で読む）
+// Chrome・Edge で使える。Windows はソニーの「NFCポートソフトウェア」を入れ、ドライバを「NFC Port」にする（手順書）。
+// 試すとき（自動の確かめ）は window.__felicaMock = { next(): IDm か null } を入れておくと、それを使う。
+const FELICA = {
+  dev: null, ep: null, seq: 0,
+  ok: () => !!(window.__felicaMock || navigator.usb),
+  async connect() {
+    if (window.__felicaMock) { this.dev = 'mock'; return true; }
+    if (!navigator.usb) throw new Error('このブラウザではカードの読み取り機を使えません（Chrome か Edge で開いてください）');
+    let d = (await navigator.usb.getDevices()).find(x => x.vendorId === 0x054c && [0x0dc8, 0x0dc9].includes(x.productId));
+    if (!d) d = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x054c, productId: 0x0dc8 }, { vendorId: 0x054c, productId: 0x0dc9 }] });
+    await d.open();
+    if (!d.configuration) await d.selectConfiguration(1);
+    // 読み書きの口（bulk の in と out）を持つ口を探す
+    let found = null;
+    for (const itf of d.configuration.interfaces) for (const alt of itf.alternates) {
+      const i = alt.endpoints.find(e => e.type === 'bulk' && e.direction === 'in'), o = alt.endpoints.find(e => e.type === 'bulk' && e.direction === 'out');
+      if (i && o && !found) found = { n: itf.interfaceNumber, alt: alt.alternateSetting, inp: i.endpointNumber, out: o.endpointNumber, size: i.packetSize || 64 };
+    }
+    if (!found) throw new Error('読み取り機の口が見つかりませんでした');
+    try { await d.claimInterface(found.n); } catch (e) {
+      throw new Error('読み取り機を使えませんでした。ほかのソフトが使っているか、ドライバが「NFC Port」になっていない可能性があります（手順書を見てください）');
+    }
+    this.dev = d; this.ep = found;
+    // 読み取りの準備（RFを入れ直して FeliCa にする）
+    await this.apdu([0xff, 0x50, 0x00, 0x00, 0x02, 0x82, 0x00, 0x00]);   // 透過の終わり
+    await this.apdu([0xff, 0x50, 0x00, 0x00, 0x02, 0x81, 0x00, 0x00]);   // 透過の始まり
+    await this.apdu([0xff, 0x50, 0x00, 0x00, 0x02, 0x83, 0x00, 0x00]);   // RF を切る
+    await this.apdu([0xff, 0x50, 0x00, 0x00, 0x02, 0x84, 0x00, 0x00]);   // RF を入れる
+    await this.apdu([0xff, 0x50, 0x00, 0x02, 0x04, 0x8f, 0x02, 0x03, 0x00, 0x00]);   // FeliCa に切り替え
+    return true;
+  },
+  async apdu(bytes) {
+    const d = this.dev, ep = this.ep;
+    const len = bytes.length; this.seq = (this.seq + 1) & 0xff;
+    const head = [0x6b, len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff, 0x00, this.seq, 0x00, 0x00, 0x00];
+    await d.transferOut(ep.out, new Uint8Array([...head, ...bytes]));
+    const r = await d.transferIn(ep.inp, Math.max(ep.size, 512));
+    return new Uint8Array(r.data.buffer);
+  },
+  // カードをさがして、あれば IDm（16けた）を返す
+  async poll() {
+    if (window.__felicaMock) return window.__felicaMock.next();
+    if (!this.dev || this.dev === 'mock') return null;
+    const res = await this.apdu([0xff, 0x50, 0x00, 0x01, 0x00, 0x00, 0x11, 0x5f, 0x46, 0x04, 0xa0, 0x86, 0x01, 0x00, 0x95, 0x82, 0x00, 0x06, 0x06, 0x00, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00]);
+    // 返事の中の 0x97（カードからの返事）を探す：97 長さ [長さ 01 IDm(8) PMm(8)…]
+    for (let i = 10; i < res.length - 12; i++) {
+      if (res[i] === 0x97 && res[i + 3] === 0x01) return [...res.slice(i + 4, i + 12)].map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    }
+    return null;
+  },
+  async close() { try { if (this.dev && this.dev !== 'mock') await this.dev.close(); } catch (_) {} this.dev = null; },
+};
+const normIdm = s => String(s || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+const fmtIdm = s => normIdm(s).replace(/(..)(?=.)/g, '$1 ');
+// 1回だけ読む（登録やログインのとき）：見つかるまで最大 20秒
+async function readCardOnce(onMsg) {
+  await FELICA.connect();
+  onMsg?.('カードを読み取り機にかざしてください…');
+  const end = Date.now() + 20000;
+  while (Date.now() < end) {
+    const id = await FELICA.poll();
+    if (id) return id;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  throw new Error('カードが見つかりませんでした。もう一度どうぞ');
+}
+
+// ---------------------------------------------------------------- カードと番号（本人）
+function cardPinPanel() {
+  const mine = S.cards.filter(c => c.staff_id === S.me.id);
+  return `<section class="panel" id="cardPanel"><h2>カードと番号</h2>
+    <p class="sub" style="margin:4px 0 10px">社員証やICシール（FeliCa）を、総務で登録してもらうと使えます。<b>打刻用の端末</b>にかざすだけで打刻でき、<b>カード＋4けたの番号</b>でログインもできます（ログイン名とパスワードもこれまでどおり使えます）。</p>
+    ${mine.length ? `<ul class="mini">${mine.map(c => `<li>${icon('card')}<div class="x"><b>${esc(c.label)}</b><span class="num">番号 ${esc(fmtIdm(c.idm).slice(0, 5))}… ・登録 ${fmtDay(c.added_at)}${c.last_used ? `・最後に使った ${fmtAt(c.last_used)}` : ''}</span></div></li>`).join('')}</ul>` : '<p class="sub">まだカードは登録されていません（総務に頼んでください）。</p>'}
+    <form id="pinForm" class="row pinrow"><label class="f"><span class="fl">カードで入るときの4けたの番号</span><input id="pinNew" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="例：4けたの数字"></label>
+      <button class="btn" type="submit">${HR.pinSet ? '番号を変える' : '番号を決める'}</button></form>
+    <p class="hint">同じ数字（1111）や並んだ数字（1234）は使えません。5回まちがえると15分そのカードでは入れなくなります。</p></section>`;
+}
+
+// ---------------------------------------------------------------- 総務：カードと打刻用の端末・病院の場所
+VIEWS.cards = function () {
+  if (!S.hrReady || !S.me.is_soumu) return VIEWS.home();
+  const site = S.sites[0];
+  const local = (() => { try { return localStorage.getItem('ringi_kiosk'); } catch (_) { return null; } })();
+  return `${pageHead('カードと打刻の端末', '職員の社員証やICシール（FeliCa）を登録し、打刻用の端末を決めます。読み取り機はソニーの PaSoRi（RC-S300）を、Chrome か Edge で使います。')}
+  <section class="panel"><h2>カードを登録する</h2>
+    <form id="cardForm" class="form two-col">
+      <label class="f"><span class="fl">職員</span><select id="cfWho" required><option value="">選ぶ</option>${S.staff.map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}）</option>`).join('')}</select></label>
+      <label class="f"><span class="fl">カードの種類</span><select id="cfLabel"><option>社員証</option><option>ICシール</option><option>ICシール（スマホの裏）</option><option>予備のカード</option></select></label>
+      <label class="f wide"><span class="fl">カードの番号（IDm・16けた）</span><span class="row"><input id="cfIdm" class="num" placeholder="読み取り機で読むか、手で入れる" autocomplete="off" spellcheck="false">
+        <button class="btn" type="button" data-a="hReadCard" data-to="cfIdm">${icon('card')}読み取り機で読む</button></span><span class="hint" id="cfMsg">番号はカードごとに決まっていて、だれでも読める番号です。打刻用の端末と、4けたの番号といっしょに使うので、番号だけでは入れません。</span></label>
+      <div class="actbar inpanel wide"><span class="sp"></span><button class="btn primary" type="submit">${icon('check')}登録する</button></div>
+    </form></section>
+  <section class="panel flush"><div class="panel-h"><h2>登録したカード（${S.cards.length}枚）</h2></div>
+    ${S.cards.length ? `<table class="dtable"><thead><tr><th>職員</th><th>種類</th><th>番号</th><th>最後に使った</th><th></th></tr></thead><tbody>${S.cards.slice().sort((a, b) => P(a.staff_id).sort - P(b.staff_id).sort).map(c => `<tr><td>${esc(P(c.staff_id).name)}<span class="sub">${esc(P(c.staff_id).dept)}</span></td><td>${esc(c.label)}</td><td class="num">${esc(fmtIdm(c.idm))}</td><td class="num">${c.last_used ? fmtAt(c.last_used) : '—'}</td><td><button class="btn sm text danger" type="button" data-a="hCardDel" data-id="${c.id}">外す</button></td></tr>`).join('')}</tbody></table>` : `<p class="sub pfoot">まだありません。</p>`}</section>
+  <section class="panel"><h2>打刻用の端末</h2>
+    <p class="sub" style="margin:4px 0 10px">通用口などに置くパソコンやタブレットを「打刻用」にします。打刻用にした端末はログインしないまま、かざしたカードの人の出勤・退勤だけを記録します（ほかの画面は開けません）。</p>
+    ${local ? `<div class="infobox">${icon('wifi')}<div><b>この端末は打刻用になっています</b><span class="sub">ログアウトすると、ログインの画面に「打刻の画面を開く」が出ます。</span></div><button class="btn primary" type="button" data-a="hKioskOpen">打刻の画面を開く</button></div>` : ''}
+    <div class="row"><label class="f"><span class="fl">端末の名前</span><input id="kName" placeholder="例：1階 通用口" value="1階 通用口"></label><button class="btn" type="button" data-a="hKioskAdd">${icon('wifi')}この端末を打刻用にする</button></div>
+    ${S.kiosks.length ? `<ul class="mini">${S.kiosks.map(k => `<li>${icon('wifi')}<div class="x"><b>${esc(k.name)}</b><span class="num">${k.revoked ? '止めました' : `設定 ${fmtDay(k.added_at)}${k.last_used ? `・最後に使った ${fmtAt(k.last_used)}` : ''}`}</span></div>${k.revoked ? '' : `<button class="btn sm text danger" type="button" data-a="hKioskDel" data-id="${k.id}">止める</button>`}</li>`).join('')}</ul>` : ''}
+  </section>
+  <section class="panel"><h2>病院の場所（スマホの打刻で「院内」「院外」を出すため）</h2>
+    <p class="sub" style="margin:4px 0 10px">${site ? `いま：<b>${esc(site.name)}</b>（半径 ${site.radius_m}m）。` : ''}病院の中で「いまいる場所にする」を押すと、そこを病院の場所にします。本人が「場所も残す」にしたときだけ、打刻した場所が記録の画面に出ます（地図の位置は出しません）。</p>
+    <div class="row"><label class="f"><span class="fl">半径</span><select id="siteR">${[100, 200, 300, 500, 1000].map(m => `<option value="${m}" ${site?.radius_m === m ? 'selected' : ''}>${m}m</option>`).join('')}</select></label><button class="btn" type="button" data-a="hSiteHere">${icon('pin')}いまいる場所を病院の場所にする</button></div></section>`;
+};
+
+// ---------------------------------------------------------------- 打刻用の端末の画面（ログインしないで使う）
+const kioskKey = () => { try { return localStorage.getItem('ringi_kiosk'); } catch (_) { return null; } };
+function kioskView(msg) {
+  document.body.classList.add('at-login', 'kiosk'); document.body.classList.remove('booting');
+  $('#bar').hidden = true; $('#navbar').hidden = true; $('#notes').hidden = true;
+  $('#view').innerHTML = `<section class="kioskv">
+    <div class="ktop"><span class="mark">稟</span><b id="kName2">打刻用の端末</b><span class="sp"></span><button class="btn sm" type="button" data-a="hKioskExit">終わる</button></div>
+    <div class="kclock num" id="kClock">${hmOf(Date.now())}</div><div class="kdate">${todayLabel()}</div>
+    <div class="kmsg" id="kMsg" role="status" aria-live="polite">${msg || '社員証・ICシールを、読み取り機にかざしてください'}</div>
+    <div class="kact"><button class="btn primary big" type="button" data-a="hKioskStart" id="kStart">${icon('card')}読み取り機をつなぐ</button></div>
+    <details class="kman"><summary>読み取り機がないとき（お試し用）</summary><form id="kForm" class="row"><input id="kIdm" class="num" placeholder="カードの番号（16けた）" autocomplete="off"><button class="btn" type="submit">打刻する</button></form></details>
+    <p class="kfoot">この端末は打刻だけに使います。ほかの画面は開けません。</p></section>`;
+  sb.rpc('kiosk_check', { p_key: kioskKey() }).then(({ data }) => { if (data && data.ok) $('#kName2') && ($('#kName2').textContent = `打刻用の端末：${data.name}`); else kioskMsg('この端末の打刻用の設定が止められています。総務に連絡してください', 'ng'); });
+  clearInterval(HR.kTick); HR.kTick = setInterval(() => { const c = $('#kClock'); if (c) c.textContent = hmOf(Date.now()); else clearInterval(HR.kTick); }, 1000);
+}
+function kioskMsg(h, cls = '') { const m = $('#kMsg'); if (!m) return; m.className = 'kmsg ' + cls; m.innerHTML = h; clearTimeout(HR.kMsgT); if (cls) HR.kMsgT = setTimeout(() => { const x = $('#kMsg'); if (x) { x.className = 'kmsg'; x.textContent = '社員証・ICシールを、読み取り機にかざしてください'; } }, 5000); }
+async function kioskPunch(idm) {
+  if (HR.kBusy) return; HR.kBusy = true;
+  try {
+    const { data, error } = await sb.rpc('kiosk_punch', { p_key: kioskKey(), p_idm: idm });
+    if (error) kioskMsg(esc(error.message || '打刻できませんでした'), 'ng');
+    else kioskMsg(`<b>${esc(data.name)}さん</b><span>${data.kind === 'in' ? '出勤' : '退勤'}　${hmOf(Date.parse(data.at))}</span>${data.kind === 'in' && data.shift ? `<small>${esc(data.shift)}</small>` : data.kind === 'out' ? '<small>おつかれさまでした</small>' : ''}`, data.kind === 'in' ? 'in' : 'out');
+  } catch (_) { kioskMsg('つながりませんでした。もう一度かざしてください', 'ng'); }
+  finally { setTimeout(() => { HR.kBusy = false; }, 2500); }
+}
+async function kioskLoop() {
+  HR.kRun = true; let last = '', lastAt = 0;
+  while (HR.kRun && $('#kMsg')) {
+    try {
+      const id = await FELICA.poll();
+      if (id && (id !== last || Date.now() - lastAt > 5000)) { last = id; lastAt = Date.now(); await kioskPunch(id); }
+    } catch (e) { kioskMsg(esc(e.message || '読み取り機が外れました'), 'ng'); HR.kRun = false; const b = $('#kStart'); if (b) b.hidden = false; return; }
+    await new Promise(r => setTimeout(r, 400));
+  }
+}
+
+// ---------------------------------------------------------------- カードで入る（ログインの画面）
+function cardLoginHtml() {
+  if (!FELICA.ok()) return '';
+  return `<details class="lcard" ${HR.cardOpen ? 'open' : ''}><summary>${icon('card')}カードで入る（社員証・ICシール＋4けたの番号）</summary>
+    <form id="clf"><input type="hidden" id="clIdm" value="${esc(HR.clIdm || '')}">
+      <div class="row"><button class="btn" type="button" data-a="hReadCard" data-to="clIdm">${icon('card')}${HR.clIdm ? 'カードを読み直す' : 'カードを読む'}</button><span class="sub" id="clMsg">${HR.clIdm ? `読みました（${esc(fmtIdm(HR.clIdm).slice(0, 5))}…）` : '読み取り機（PaSoRi）をつないでください'}</span></div>
+      <label class="f"><span class="fl">4けたの番号</span><input id="clPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+      <button class="btn primary full" type="submit">カードで入る</button>
+      <p class="hint">番号は、一度ログイン名とパスワードで入ってから「わたしの勤務」の「カードと番号」で決めます。</p></form></details>
+    ${kioskKey() ? `<p class="lkiosk"><button class="btn text" type="button" data-a="hKioskOpen">${icon('wifi')}この端末は打刻用です：打刻の画面を開く</button></p>` : ''}`;
+}
+async function cardLogin(idm, pin) {
+  let res;
+  try {
+    const r = await fetch(`${CFG.url}/functions/v1/card-login`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CFG.anonKey }, body: JSON.stringify({ idm, pin }) });
+    if (r.status === 404) { loginView('カードで入る窓口が、まだ置かれていません（手順書の「カードで入る」のとおりに置くと使えます）。ログイン名とパスワードで入ってください。'); return; }
+    res = await r.json().catch(() => ({}));
+    if (!r.ok || !res.ok) { HR.cardOpen = true; loginView(res.error || 'カードで入れませんでした'); return; }
+  } catch (_) { HR.cardOpen = true; loginView('カードで入る窓口につながりませんでした。ログイン名とパスワードで入ってください。'); return; }
+  let out = await sb.auth.verifyOtp({ token_hash: res.token_hash, type: 'magiclink' });
+  if (out.error) out = await sb.auth.verifyOtp({ token_hash: res.token_hash, type: 'email' });
+  if (out.error) { HR.cardOpen = true; loginView('カードで入れませんでした（入場券が古くなりました）。もう一度どうぞ'); return; }
+  HR.clIdm = null; HR.cardOpen = false;
+  await start();
+}
+
+// ---------------------------------------------------------------- 入職・退職の手続き
+const HR_FIELDS = {
+  '入職': [['kana', 'ふりがな'], ['addr', '住所（架空で）'], ['tel', '電話'], ['bank', '給与の振込口座（架空で）'], ['emergency', '緊急の連絡先（架空で）'], ['commute', '通勤のしかた']],
+  '退職': [['addr_after', '退職のあとの住所（架空で）'], ['tel_after', '退職のあとの電話'], ['last_day', '最後に出勤する日'], ['returns', '返す物の予定（社員証・鍵・制服など）']],
+};
+const HR_KEYS = {
+  '入職': ['雇用契約を交わした', '社員証・ICシールを作った', '制服・ロッカーの鍵を渡した', '健康保険・年金の手続きをした', '給与の振込口座を登録した', '電子カルテなどのアカウントを作った'],
+  '退職': ['社員証・鍵・制服を返してもらった', '健康保険証を返してもらった', '最後の給与・有給の残りを計算した', '離職票・源泉徴収票を送った', '電子カルテなどのアカウントを止めた'],
+};
+const HRST = { input: '本人が入れる', check: '総務が確かめる', done: '終わり' };
+VIEWS.hr = function () {
+  if (!S.hrReady) return VIEWS.home();
+  const list = S.procs.slice().sort((a, b) => ({ input: 1, check: 0, done: 2 }[a.status] - { input: 1, check: 0, done: 2 }[b.status]) || b.id - a.id);
+  const open = HR.hrOpen && list.find(p => p.id === HR.hrOpen);
+  if (open) return hrDetail(open);
+  const mine = list.filter(p => p.staff_id === S.me.id);
+  if (!S.me.is_soumu && mine.length === 1) return hrDetail(mine[0]);
+  return `${pageHead('入職・退職の手続き', S.me.is_soumu ? '入職する人・退職する人の手続きを、紙を回さずに進めます。本人がスマホから入れ、総務が項目ごとに確かめます。退職は「退職の届け出」が決裁されると自動で始まります。' : 'あなたの手続きです。')}
+  ${S.me.is_soumu ? `<section class="panel"><h2>入職の手続きを始める</h2><form id="hrStart" class="row"><label class="f"><span class="fl">入職する人</span><select id="hsWho" required><option value="">選ぶ</option>${S.staff.filter(x => !S.procs.some(p => p.staff_id === x.id && p.kind === '入職' && p.status !== 'done')).map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}）</option>`).join('')}</select></label>
+    <label class="f"><span class="fl">入職日</span><input id="hsDay" type="date" required></label><button class="btn primary" type="submit">${icon('send')}始める（本人に知らせる）</button></form>
+    <p class="hint">お試し版では、ログインできる架空の職員から選びます。本番では、採用が決まった人のログインを作ってから始めます。</p></section>` : ''}
+  <section class="panel flush"><div class="panel-h"><h2>手続きの一覧</h2></div>
+    ${list.length ? `<ul class="cards">${list.map(p => { const keys = HR_KEYS[p.kind]; const n = keys.filter(k => p.checks && p.checks[k]).length;
+      return `<li class="click" data-a="hHrOpen" data-id="${p.id}"><div class="ct"><span class="lbl ${p.status === 'done' ? 'ok' : p.status === 'check' ? 'turn' : 'wait'}">${HRST[p.status]}</span><span class="sub">${p.kind}・${md(p.due_d)}</span></div>
+        <b>${esc(P(p.staff_id).name)}さんの${p.kind}の手続き</b><span class="sub">${esc(P(p.staff_id).dept)}・総務の確かめ ${n}/${keys.length}${p.back_note ? '・直してほしいことあり' : ''}</span></li>`; }).join('')}</ul>` : emptyArt('手続きはありません')}</section>`;
+};
+function hrDetail(p) {
+  const me = p.staff_id === S.me.id, so = S.me.is_soumu;
+  const canEdit = (me && p.status === 'input') || (so && p.status !== 'done');
+  const keys = HR_KEYS[p.kind];
+  const f = p.form || {};
+  const ringi = p.ringi_id ? R(p.ringi_id) : null;
+  return `<div class="crumb"><button class="btn text sm" type="button" data-a="hHrBack">${icon('back')}一覧へ戻る</button></div>
+  ${pageHead(`${esc(P(p.staff_id).name)}さんの${p.kind}の手続き`, `${p.kind}日 ${md(p.due_d)}・${esc(P(p.staff_id).dept)}${ringi ? `・<button class="btn text sm" type="button" data-open="${ringi.id}">もとの退職の届け出を見る</button>` : ''}`)}
+  <ol class="hrsteps">${['input', 'check', 'done'].map((s, i) => `<li class="${p.status === s ? 'on' : ['input', 'check', 'done'].indexOf(p.status) > i ? 'done' : ''}"><i>${i + 1}</i>${HRST[s]}</li>`).join('')}</ol>
+  ${p.back_note && p.status === 'input' ? `<section class="alert back"><span class="ai">${icon('undo')}</span><div class="ax"><b>総務から直してほしいこと</b><p>「${esc(p.back_note)}」</p></div></section>` : ''}
+  <div class="formcols"><section class="panel"><h2>${me ? 'あなたが入れること' : '本人が入れたこと'}</h2>
+    <form id="hrForm" data-id="${p.id}" class="form">${HR_FIELDS[p.kind].map(([k, l]) => `<label class="f wide"><span class="fl">${l}</span><input id="hf_${k}" ${k === 'last_day' ? 'type="date"' : ''} value="${esc(f[k] || '')}" ${canEdit ? '' : 'readonly'}></label>`).join('')}
+      ${canEdit ? `<div class="actbar inpanel wide"><button class="btn" type="button" data-a="hHrSave" data-id="${p.id}">下書きとして残す</button><span class="sp"></span>${me && p.status === 'input' ? `<button class="btn primary" type="submit">${icon('send')}総務へ出す</button>` : so ? `<button class="btn primary" type="button" data-a="hHrSave" data-id="${p.id}">総務が直して残す</button>` : ''}</div>` : ''}
+      <p class="hint wide">※お試し版です。本物の住所・口座などは入れないでください。</p></form></section>
+    <aside class="panel"><h2>総務の確かめ（${keys.filter(k => p.checks && p.checks[k]).length}/${keys.length}）</h2>
+      <ul class="hrchk">${keys.map(k => { const c = p.checks && p.checks[k]; return `<li>${so && p.status === 'check' ? `<label class="chk"><input type="checkbox" data-a="hHrChk" data-id="${p.id}" data-k="${esc(k)}" ${c ? 'checked' : ''}><span>${esc(k)}</span></label>` : `<span class="${c ? 'okm' : 'muted'}">${c ? icon('check') : '○'} ${esc(k)}</span>`}${c ? `<span class="sub">${fmtAt(c.at)} ${esc(c.by)}</span>` : ''}</li>`; }).join('')}</ul>
+      ${so && p.status === 'check' ? `<label class="f"><span class="fl">本人に直してほしいこと</span><textarea id="hrBackNote" rows="2"></textarea></label><div class="actbar inpanel"><button class="btn" type="button" data-a="hHrReturn" data-id="${p.id}">${icon('undo')}本人に直してもらう</button><span class="sp"></span><button class="btn primary" type="button" data-a="hHrDone" data-id="${p.id}" ${keys.every(k => p.checks && p.checks[k]) ? '' : 'disabled'}>${icon('check')}手続きを終える</button></div>` : ''}
+      ${p.status === 'done' ? `<p class="sub">${fmtAt(p.done_at)} に終わりました。</p>` : p.status === 'input' && so ? '<p class="sub">本人が入れて出すのを待っています。</p>' : ''}</aside></div>`;
+}
+
+// ---------------------------------------------------------------- 雇用契約（読んで、名前を打って同意）
+VIEWS.contracts = function () {
+  if (!S.hrReady) return VIEWS.home();
+  const list = S.contracts.slice().sort((a, b) => b.id - a.id);
+  const open = HR.ctOpen && list.find(c => c.id === HR.ctOpen);
+  if (open) return ctDetail(open);
+  const CTS = { sent: '同意を待っている', signed: '同意ずみ', void: '取り消し' };
+  return `${pageHead('雇用契約', S.me.is_soumu ? '契約書を画面で送り、本人が読んで名前を入れて同意します。同意したときの全文・名前・日時から「しるし」を作って残すので、あとから書きかえると分かります。' : 'あなたあての契約書です。読んで、同意するときは名前を入れてください。')}
+  ${S.me.is_soumu ? `<section class="panel"><h2>契約書を送る</h2><form id="ctNew" class="form">
+    <label class="f"><span class="fl">送る相手</span><select id="ctWho" required><option value="">選ぶ</option>${S.staff.map(x => `<option value="${x.id}">${esc(x.name)}（${esc(x.dept)}）</option>`).join('')}</select></label>
+    <label class="f"><span class="fl">契約書の名前</span><input id="ctTitle" value="雇用契約書（正職員）" required></label>
+    ${[['雇用の期間', '期間の定めなし'], ['働く場所・仕事', ''], ['勤務の時間', '日勤 8:30〜17:15（勤務表による）'], ['給与', '給与規程による（架空）'], ['休み', '4週8休・年次有給休暇']].map(([k, v], i) => `<label class="f"><span class="fl">${k}</span><input id="ctT${i}" data-k="${k}" value="${esc(v)}"></label>`).join('')}
+    <div class="actbar inpanel wide"><span class="sp"></span><button class="btn primary" type="submit">${icon('send')}送る</button></div></form></section>` : ''}
+  <section class="panel flush"><div class="panel-h"><h2>契約書</h2></div>
+    ${list.length ? `<ul class="cards">${list.map(c => `<li class="click" data-a="hCtOpen" data-id="${c.id}"><div class="ct"><span class="lbl ${c.status === 'signed' ? 'ok' : c.status === 'sent' ? 'wait' : 'no'}">${CTS[c.status]}</span><span class="sub">送った日 ${fmtDay(c.sent_at)}</span></div><b>${esc(c.title)}</b><span class="sub">${esc(P(c.staff_id).name)}さん${c.signed_at ? `・${fmtAt(c.signed_at)} 同意` : ''}</span></li>`).join('')}</ul>` : emptyArt('契約書はありません')}</section>`;
+};
+function ctDetail(c) {
+  const me = c.staff_id === S.me.id;
+  return `<div class="crumb"><button class="btn text sm" type="button" data-a="hCtBack">${icon('back')}一覧へ戻る</button></div>
+  ${pageHead(esc(c.title), `${esc(P(c.staff_id).name)}さんあて・${fmtAt(c.sent_at)} 送付`, `<button class="btn sm" type="button" data-a="hCtPrint">${icon('print')}印刷（A4）</button>`)}
+  <section class="panel ctbody"><pre class="ctpre">${esc(c.body)}</pre></section>
+  ${c.status === 'sent' && me ? `<section class="panel actcard"><h2>同意する</h2><form id="ctSign" data-id="${c.id}">
+    <label class="chk"><input type="checkbox" id="ctAgree"><span>内容を読み、同意します</span></label>
+    <label class="f"><span class="fl">名前（「${esc(S.me.name)}」と入れてください）</span><input id="ctName" autocomplete="off"></label>
+    <div class="actbar inpanel"><span class="sp"></span><button class="btn primary" type="submit">${icon('pen')}名前を入れて同意する</button></div></form>
+    <p class="hint">同意すると、この全文とあなたの名前・日時から「しるし」を作って残します。あとで内容を書きかえると、しるしが合わなくなるので分かります。</p></section>` : ''}
+  ${c.status === 'sent' && !me && S.me.is_soumu ? `<section class="panel"><p class="sub" style="margin:0 0 10px">${esc(P(c.staff_id).name)}さんの同意を待っています。</p><div class="row"><input id="ctVoidNote" placeholder="取り消す理由"><button class="btn text danger" type="button" data-a="hCtVoid" data-id="${c.id}">取り消す</button></div></section>` : ''}
+  ${c.status === 'signed' ? `<section class="panel"><h2>同意の記録</h2><table class="kvt slim"><tr><th>同意した人</th><td>${esc(c.sign_name)}</td></tr><tr><th>日時</th><td class="num">${fmtAt(c.signed_at)}</td></tr><tr><th>しるし</th><td class="num small">${esc((c.sign_hash || '').slice(0, 32))}…</td></tr></table>
+    <div class="row" style="margin-top:10px"><button class="btn sm" type="button" data-a="hCtVerify" data-id="${c.id}">${icon('shield')}書きかえられていないか確かめる</button><span id="ctVer" class="sub"></span></div></section>` : ''}
+  ${c.status === 'void' ? `<section class="alert no"><span class="ai">${icon('ban')}</span><div class="ax"><b>取り消されました</b>${c.void_note ? `<p>${esc(c.void_note)}</p>` : ''}</div></section>` : ''}
+  <section class="printdoc pmain ctdoc" aria-hidden="true"><div class="pdtitle">${esc(c.title)}</div><pre class="ctpre">${esc(c.body)}</pre>
+    ${c.status === 'signed' ? `<p>上記の内容に同意しました。<br>${fmtAt(c.signed_at)}　${esc(c.sign_name)}（画面で名前を入れて同意）<br><small>しるし：${esc(c.sign_hash)}</small></p>` : '<p>（まだ同意していません）</p>'}
+    <p class="pfoot">稟議・申請（お試し版）から印刷 ※架空のデータです</p></section>`;
+}
+
+// ---------------------------------------------------------------- 資格・免許
+VIEWS.lics = function () {
+  if (!S.hrReady) return VIEWS.home();
+  const mine = S.lics.filter(l => l.staff_id === S.me.id);
+  const others = S.lics.filter(l => l.staff_id !== S.me.id);
+  const st = l => !l.expires_on ? '<span class="lbl line sm">期限なし</span>' : daysTo(l.expires_on) < 0 ? `<span class="lbl back sm">${md(l.expires_on)} 切れ</span>` : daysTo(l.expires_on) <= 30 ? `<span class="lbl back sm">${md(l.expires_on)}（あと${daysTo(l.expires_on)}日）</span>` : daysTo(l.expires_on) <= 90 ? `<span class="lbl wait sm">${md(l.expires_on)}（あと${daysTo(l.expires_on)}日）</span>` : `<span class="lbl ok sm">${l.expires_on.replace(/-/g, '/')}まで</span>`;
+  const ed = HR.licEdit ? S.lics.find(l => l.id === HR.licEdit) : null;
+  const row = (l, who) => `<tr><td>${who ? `<b>${esc(P(l.staff_id).name)}</b>　${esc(l.name)}<span class="sub">${esc(P(l.staff_id).dept)}</span>` : `<b>${esc(l.name)}</b>`}</td><td class="num">${esc(l.number)}</td><td>${st(l)}</td>
+    <td>${l.checked_at ? `<span class="okm">${icon('check')}原本確認</span>` : S.me.is_soumu ? `<button class="btn sm" type="button" data-a="hLicCheck" data-id="${l.id}">原本を確かめた</button>` : '<span class="muted">まだ</span>'}</td>
+    <td>${l.staff_id === S.me.id || S.me.is_soumu ? `<button class="btn sm text" type="button" data-a="hLicEdit" data-id="${l.id}">直す</button>` : ''}</td></tr>`;
+  return `${pageHead('資格・免許', '資格・免許と、その期限です。期限の90日前・30日前・切れたときに、本人と総務へ知らせます（仮）。所属長は部署の人の分も見られます。')}
+  <section class="panel" id="licForm"><h2>${ed ? '資格・免許を直す' : '資格・免許を足す'}</h2><form id="lf2" class="form" data-id="${ed ? ed.id : ''}">
+    ${S.me.is_soumu && !ed ? `<label class="f"><span class="fl">だれの</span><select id="lcWho"><option value="">自分</option>${S.staff.filter(x => x.id !== S.me.id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>` : ''}
+    <label class="f"><span class="fl">名前</span><input id="lcName" required value="${esc(ed?.name || '')}" placeholder="例：看護師免許・BLS"></label>
+    <label class="f"><span class="fl">番号</span><input id="lcNo" value="${esc(ed?.number || '')}" placeholder="架空で"></label>
+    <label class="f"><span class="fl">取った日</span><input id="lcGot" type="date" value="${ed?.got_on || ''}"></label>
+    <label class="f"><span class="fl">期限<span class="opt">ないときは空</span></span><input id="lcExp" type="date" value="${ed?.expires_on || ''}"></label>
+    <div class="actbar inpanel wide">${ed ? `<button class="btn" type="button" data-a="hLicCancel">やめる</button><button class="btn text danger" type="button" data-a="hLicDel" data-id="${ed.id}">消す</button>` : ''}<span class="sp"></span><button class="btn primary" type="submit">${icon('check')}${ed ? '直す' : '足す'}</button></div></form>
+    <p class="hint">本人が直すと、総務の「原本を確かめた」はやり直しになります。</p></section>
+  <section class="panel flush"><div class="panel-h"><h2>わたしの資格・免許</h2></div>${mine.length ? `<table class="dtable"><thead><tr><th>名前</th><th>番号</th><th>期限</th><th>総務</th><th></th></tr></thead><tbody>${mine.map(l => row(l, false)).join('')}</tbody></table>` : `<p class="sub pfoot">まだありません。</p>`}</section>
+  ${others.length ? `<section class="panel flush"><div class="panel-h"><h2>${S.me.is_soumu ? '全員' : '部署の人'}の資格・免許（期限が近い順）</h2></div><table class="dtable"><thead><tr><th>職員・名前</th><th>番号</th><th>期限</th><th>総務</th><th></th></tr></thead><tbody>${others.slice().sort((a, b) => (a.expires_on || '9999').localeCompare(b.expires_on || '9999')).map(l => row(l, true)).join('')}</tbody></table></section>` : ''}`;
+};
+
+// ---------------------------------------------------------------- 職員アンケート
+VIEWS.survey = function () {
+  if (!S.hrReady) return VIEWS.home();
+  const list = S.surveys.slice().sort((a, b) => b.id - a.id);
+  const open = HR.svOpen && list.find(v => v.id === HR.svOpen);
+  if (open) return svDetail(open);
+  const canMake = S.me.is_soumu || S.me.is_boss;
+  return `${pageHead('職員アンケート', '名前は残りません。だれが答えたか（答えたかどうか）と、答えの中身は結びつかない形で残します。答えた人が3人より少ないうちは、集計も見せません。', canMake ? `<button class="btn" type="button" data-a="hSvNew">${icon('new')}アンケートを作る</button>` : '')}
+  ${HR.svNew ? svMakeForm() : ''}
+  <section class="panel flush"><div class="panel-h"><h2>アンケート</h2></div>
+    ${list.length ? `<ul class="cards">${list.map(v => `<li class="click" data-a="hSvOpen" data-id="${v.id}"><div class="ct">${surveyOpen(v) ? (svAnswered(v) ? '<span class="lbl ok">答えた</span>' : surveyFor(v) ? '<span class="lbl wait">受付中・まだ</span>' : '<span class="lbl line">受付中</span>') : '<span class="lbl no">締め切り</span>'}<span class="sub">${v.until_d ? md(v.until_d) + 'まで' : ''}</span></div><b>${esc(v.title)}</b><span class="sub">${esc(P(v.created_by).name)}さん・${v.dept_id ? esc(deptById(v.dept_id)?.name || '') + 'の人' : '全員'}あて</span></li>`).join('')}</ul>` : emptyArt('アンケートはありません')}</section>`;
+};
+function svMakeForm() {
+  const qs = HR.svQs || (HR.svQs = [{ kind: 'scale', label: '' }]);
+  const ds = S.me.is_soumu ? [null, ...S.depts.filter(d => d.parent_id != null)] : S.depts.filter(d => myBossDepts().includes(d.id));
+  return `<section class="panel"><h2>アンケートを作る</h2><form id="svMake" class="form">
+    <label class="f wide"><span class="fl">題名</span><input id="smTitle" required></label>
+    <label class="f wide"><span class="fl">説明</span><input id="smBody" placeholder="例：所要時間は3分ほどです"></label>
+    <label class="f"><span class="fl">あて</span><select id="smDept">${ds.map(d => `<option value="${d ? d.id : ''}">${d ? esc(d.name) + 'の人' : '全員'}</option>`).join('')}</select></label>
+    <label class="f"><span class="fl">締め切り</span><input id="smUntil" type="date" min="${todayYmd()}"></label>
+    <div class="f wide"><span class="fl">質問</span>${qs.map((q, i) => `<div class="smq row"><select data-a="hSmKind" data-i="${i}">${[['scale', '5段階'], ['choice', '選ぶ'], ['text', '自由に書く']].map(([k, l]) => `<option value="${k}" ${q.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <input class="smL" data-i="${i}" value="${esc(q.label)}" placeholder="質問"> ${q.kind === 'choice' ? `<input class="smO" data-i="${i}" value="${esc(q.options || '')}" placeholder="選ぶもの（、で区切る）">` : ''}</div>`).join('')}
+      <button class="btn sm" type="button" data-a="hSmAdd">${icon('new')}質問を足す</button></div>
+    <div class="actbar inpanel wide"><button class="btn" type="button" data-a="hSvNew">やめる</button><span class="sp"></span><button class="btn primary" type="submit">${icon('send')}出す（あての人に知らせる）</button></div></form></section>`;
+}
+function svDetail(v) {
+  const qs = v.questions || [];
+  const canAns = surveyOpen(v) && surveyFor(v) && !svAnswered(v);
+  const canRes = S.me.is_soumu || v.created_by === S.me.id;
+  const scale = ['そう思わない', 'あまり思わない', 'どちらでもない', 'ややそう思う', 'そう思う'];
+  return `<div class="crumb"><button class="btn text sm" type="button" data-a="hSvBack">${icon('back')}一覧へ戻る</button></div>
+  ${pageHead(esc(v.title), `${esc(v.body || '')}${v.until_d ? `（${md(v.until_d)}まで）` : ''}`, canRes && surveyOpen(v) ? `<button class="btn sm" type="button" data-a="hSvClose" data-id="${v.id}">締め切る</button>` : '')}
+  ${canAns ? `<section class="panel"><form id="svAns" data-id="${v.id}">${qs.map((q, i) => `<fieldset class="svq"><legend>${i + 1}. ${esc(q.label)}</legend>
+    ${q.kind === 'scale' ? `<div class="scale">${(q.options || scale).map((o, j) => `<label class="sopt"><input type="radio" name="q_${q.k}" value="${j + 1}"><span>${esc(o)}</span></label>`).join('')}</div>`
+      : q.kind === 'choice' ? `<div class="scale">${(q.options || []).map(o => `<label class="sopt"><input type="radio" name="q_${q.k}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}</div>`
+      : `<textarea name="q_${q.k}" rows="2"></textarea>`}</fieldset>`).join('')}
+    <div class="actbar inpanel"><span class="sp"></span><button class="btn primary" type="submit">${icon('send')}答える（名前は残りません）</button></div></form></section>`
+    : svAnswered(v) ? `<section class="alert info"><span class="ai">${icon('check')}</span><div class="ax"><b>このアンケートには答えました</b><p>ありがとうございました。答えの中身は、だれのものか分からない形で残っています。</p></div></section>` : ''}
+  ${canRes ? `<section class="panel" id="svRes"><h2>集計</h2><div id="svResBox"><button class="btn" type="button" data-a="hSvRes" data-id="${v.id}">${icon('all')}集計を見る</button></div></section>` : ''}`;
+}
+function svResHtml(x, v) {
+  if (x.hidden) return `<p class="sub">いま ${x.n}人が答えています（あての人 ${x.targets}人）。答えた人が3人より少ないうちは、だれの答えか分かりやすいので集計を見せません。</p>`;
+  return `<p class="sub">${x.n}人が答えました（あての人 ${x.targets}人・${Math.round(x.n / Math.max(1, x.targets) * 100)}%）</p>${x.questions.map((q, i) => `<div class="svr"><b>${i + 1}. ${esc(q.label)}</b>
+    ${q.kind === 'scale' ? `<p>平均 <b class="num">${q.avg ?? '—'}</b>（5がいちばん良い）</p><div class="hbars">${[1, 2, 3, 4, 5].map(k => `<div><span>${k}</span><i style="width:${(q.dist?.[k] || 0) / Math.max(1, x.n) * 100}%"></i><b class="num">${q.dist?.[k] || 0}</b></div>`).join('')}</div>`
+      : q.kind === 'choice' ? `<div class="hbars">${Object.entries(q.counts || {}).map(([k, n]) => `<div><span>${esc(k)}</span><i style="width:${n / Math.max(1, x.n) * 100}%"></i><b class="num">${n}</b></div>`).join('')}</div>`
+      : `<ul class="svtexts">${(q.texts || []).map(t => `<li>${esc(t)}</li>`).join('') || '<li class="muted">なし</li>'}</ul>`}</div>`).join('')}`;
+}
+
+// ---------------------------------------------------------------- ストレスチェック
+const STRESS_Q = [
+  '非常にたくさんの仕事をしなければならない', '時間内に仕事が処理しきれない', '一生懸命働かなければならない', '仕事の量や速さを自分で決められない',
+  'ひどく疲れた', 'へとへとだ', '気がはりつめている', '不安だ', 'よく眠れない',
+  '上司と気軽に話ができる', '職場の同僚と気軽に話ができる', '困ったとき、家族や友人が頼りになる'];
+const STRESS_A = ['ちがう', 'ややちがう', 'まあそうだ', 'そうだ'];
+const STRESS_A2 = ['まったくない', 'あまりない', 'かなりある', '非常にある'];
+VIEWS.stress = function () {
+  if (!S.hrReady) return VIEWS.home();
+  const run = stressRun() || S.stressRuns.slice().sort((a, b) => b.id - a.id)[0];
+  if (!run) return `${pageHead('ストレスチェック', '')}${emptyArt('いまは行っていません')}`;
+  const me = myStress(run);
+  const open = run.open_from <= todayYmd() && run.open_until >= todayYmd();
+  const doc = isStressDoc();
+  const all = S.stress.filter(x => x.run_id === run.id && x.staff_id !== S.me.id);
+  return `${pageHead('ストレスチェック', `${esc(run.title)}（${md(run.open_from)}〜${md(run.open_until)}）。<b>結果を見られるのは、本人と実施者（${esc(sanNames(S.hrRoles.filter(r => r.role === 'stress').map(r => r.staff_id)))}）だけ</b>です。上司や総務には、本人が同意しないかぎり伝わりません（仮の質問12問。本番は国の標準の調査票）。`)}
+  ${me ? stressResult(me) : open && !futureHire(S.me.id) ? `<section class="panel"><form id="stForm" data-run="${run.id}">${STRESS_Q.map((q, i) => `<fieldset class="svq"><legend>${i + 1}. ${q}</legend><div class="scale four">${(i >= 4 && i <= 8 ? STRESS_A2 : i >= 9 ? ['非常にそうだ', 'かなりそうだ', '多少そうだ', 'まったくちがう'] : STRESS_A).map((o, j) => `<label class="sopt"><input type="radio" name="st_${i + 1}" value="${i >= 9 ? 4 - j : j + 1}"><span>${o}</span></label>`).join('')}</div></fieldset>`).join('')}
+    <div class="actbar inpanel"><span class="sp"></span><button class="btn primary" type="submit">${icon('send')}答えて結果を見る</button></div></form></section>` : `<section class="panel"><p class="sub" style="margin:0">いまは受けられる期間ではありません。</p></section>`}
+  ${doc ? `<section class="panel flush"><div class="panel-h"><h2>実施者の画面：受けた人の結果（${all.length + (me ? 1 : 0)}人）</h2><span class="sub">この一覧は実施者だけに見えています</span></div>
+    <table class="dtable"><thead><tr><th>名前</th><th>仕事の負担</th><th>心と体</th><th>周りの支え</th><th>判定</th><th>面接</th></tr></thead><tbody>${all.sort((a, b) => b.high - a.high || b.score_b - a.score_b).map(x => `<tr><td>${esc(P(x.staff_id).name)}<span class="sub">${esc(P(x.staff_id).dept)}</span></td><td class="num">${x.score_a}/16</td><td class="num">${x.score_b}/20</td><td class="num">${x.score_c}/12</td><td>${x.high ? '<span class="lbl back">高ストレス</span>' : '<span class="muted">ふつう</span>'}</td><td>${x.interview_at ? `<span class="lbl turn">申し出 ${fmtDay(x.interview_at)}</span>` : ''}</td></tr>`).join('')}</tbody></table></section>` : ''}
+  ${(S.me.is_soumu || doc) ? `<section class="panel" id="stSum"><h2>受けた人数と全体のようす</h2><div id="stSumBox"><button class="btn" type="button" data-a="hStSum" data-run="${run.id}">${icon('all')}見る</button></div><p class="hint">10人より少ないまとまりの平均は出しません（だれのことか分かりやすいため）。総務には一人ひとりの結果は見えません。</p></section>` : ''}`;
+};
+function stressResult(x) {
+  return `<section class="panel stres"><h2>あなたの結果（${fmtAt(x.at)}）</h2>
+    <div class="otrow">${[['仕事の負担', x.score_a, 16], ['心と体の反応', x.score_b, 20], ['周りの支えの少なさ', x.score_c, 12]].map(([l, v, m]) => `<div class="otc"><span class="sub">${l}</span><b class="num">${v}<small>/${m}</small></b>${bar(v, 0, m)}</div>`).join('')}</div>
+    ${x.high ? `<div class="alert back slim"><span class="ai">${icon('heart')}</span><div class="ax"><b>「高ストレス」で、医師の面接指導を受けられます</b><p>申し出ると、実施者（医師）と総務に名前だけが伝わり、面接の日を調整します。結果の中身は総務には伝わりません。</p></div>${x.interview_at ? `<span class="lbl turn">申し出ました（${fmtDay(x.interview_at)}）</span>` : `<button class="btn primary" type="button" data-a="hStInt" data-run="${x.run_id}">面接指導を申し出る</button>`}</div>`
+      : `<p class="sub">いまは大きなストレスの状態ではないようです。気になることがあれば、いつでも実施者に相談できます。</p>`}</section>`;
+}
+
+// ---------------------------------------------------------------- 理事への報告：数字のまとめ
+const repSummary = r => { const d = (r.details || []).find(x => x.k === 'summary'); if (!d) return null; try { return JSON.parse(d.value); } catch (_) { return null; } };
+function repSumHtml(x) {
+  if (!x) return '';
+  return `<div class="repsum"><div class="rsrow"><div><span class="sub">今月の購入（決裁ずみ）</span><b class="num">${yen(x.buy?.total || 0)}</b><span class="sub">${x.buy?.n || 0}件</span></div></div>
+    <h3>時間外の多い部署（${esc(String(x.ym).replace('-', '年'))}月）</h3>
+    <table class="dtable slim"><thead><tr><th>部署</th><th>人数</th><th>合計</th><th>いちばん多い人</th><th>45時間を超えた人</th></tr></thead><tbody>${(x.ot || []).map(o => `<tr><td>${esc(o.dept)}</td><td class="num">${o.people}人</td><td class="num">${o.total_h}時間</td><td class="num">${o.max_h}時間</td><td class="num">${o.over45 ? `<b class="neg">${o.over45}人</b>` : '0人'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">なし</td></tr>'}</tbody></table>
+    <h3>部署の予算の残り（${x.fy}年度）</h3>
+    <table class="dtable slim"><thead><tr><th>部署</th><th>予算</th><th>使った</th><th>残り</th></tr></thead><tbody>${(x.budget || []).map(b => `<tr><td>${esc(b.dept)}</td><td class="num">${yen(b.amount)}</td><td class="num">${yen(b.used)}</td><td class="num ${b.left < 0 ? 'neg' : ''}">${yen(b.left)}</td></tr>`).join('')}</tbody></table>
+    <p class="small muted">${fmtAt(x.made_at)} の数字（お試し版の架空の数字です）</p></div>`;
+}
+function sumDoc(r) {
+  const x = repSummary(r); if (!x) return '';
+  return `<section class="printdoc psum" aria-hidden="true"><div class="pdtop"><div class="pdno">${no(r)}「${esc(r.title)}」に付けた資料</div></div><div class="pdtitle" style="letter-spacing:.2em">数字のまとめ</div>${repSumHtml(x)}
+    <p class="pfoot">稟議・申請（お試し版）から印刷 ※架空のデータです</p></section>`;
+}
+
+// ---------------------------------------------------------------- 添付書類：中身の確かめと「のぞく」
+// 名前の終わり（拡張子）だけでなく、中身の頭の形も見る。マクロ入りの Excel・Word と、実行できるファイルは断る。
+const BAD_EXT = /\.(xlsm|xltm|xlam|xlsb|docm|dotm|pptm|ppsm|exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|wsf|ps1|jar|lnk|hta|html?|svg|zip|7z|rar)$/i;
+const u8 = async (f, n) => new Uint8Array(await f.slice(0, n).arrayBuffer());
+const startsWith = (b, arr) => arr.every((x, i) => b[i] === x);
+const hasBytes = (b, s) => { const t = typeof s === 'string' ? [...s].map(c => c.charCodeAt(0)) : s; outer: for (let i = 0; i <= b.length - t.length; i++) { for (let j = 0; j < t.length; j++) if (b[i + j] !== t[j]) continue outer; return true; } return false; };
+async function inspectFile(f, k) {
+  if (BAD_EXT.test(f.name || '')) return 'マクロ入りの書類や、実行できるファイルは付けられません';
+  const head = await u8(f, 16);
+  if (startsWith(head, [0x4d, 0x5a])) return '実行できるファイルの中身です（名前を変えても付けられません）';
+  const ext = k.ext;
+  if (ext === 'pdf') {
+    if (!startsWith(head, [0x25, 0x50, 0x44, 0x46])) return '名前は PDF ですが、中身が PDF ではありません';
+    const all = new Uint8Array(await f.arrayBuffer());
+    if (hasBytes(all, '/JavaScript') || hasBytes(all, '/Launch') || hasBytes(all, '/EmbeddedFile')) return 'プログラムやファイルが埋め込まれた PDF は付けられません';
+    return null;
+  }
+  if (ext === 'jpg') return startsWith(head, [0xff, 0xd8, 0xff]) ? null : '名前は写真（JPEG）ですが、中身がちがいます';
+  if (ext === 'png') return startsWith(head, [0x89, 0x50, 0x4e, 0x47]) ? null : '名前は写真（PNG）ですが、中身がちがいます';
+  if (ext === 'webp') return startsWith(head, [0x52, 0x49, 0x46, 0x46]) && hasBytes(head, 'WEBP') ? null : '名前は写真（WebP）ですが、中身がちがいます';
+  if (ext === 'heic') return hasBytes(head, 'ftyp') ? null : '名前は写真（HEIC）ですが、中身がちがいます';
+  if (ext === 'xlsx' || ext === 'docx') {
+    if (!startsWith(head, [0x50, 0x4b, 0x03, 0x04])) return `名前は ${ext === 'xlsx' ? 'Excel' : 'Word'} ですが、中身がちがいます`;
+    let names;
+    try { names = (await zipEntries(f)).map(e => e.name); } catch (_) { return '書類が壊れているようです'; }
+    if (!names.includes('[Content_Types].xml')) return '書類の形が正しくありません';
+    if (names.some(n => /vbaProject\.bin$/i.test(n))) return 'マクロ入りの書類は付けられません（マクロなしで保存し直してください）';
+    if (ext === 'xlsx' && !names.some(n => n.startsWith('xl/'))) return '名前は Excel ですが、中身がちがいます';
+    if (ext === 'docx' && !names.some(n => n.startsWith('word/'))) return '名前は Word ですが、中身がちがいます';
+    return null;
+  }
+  if (ext === 'xls' || ext === 'doc') {
+    if (!startsWith(head, [0xd0, 0xcf, 0x11, 0xe0])) return `名前は ${ext === 'xls' ? 'Excel' : 'Word'} ですが、中身がちがいます`;
+    const all = new Uint8Array(await f.arrayBuffer());
+    const u16 = s => [...s].flatMap(c => [c.charCodeAt(0), 0]);
+    if (hasBytes(all, u16('_VBA_PROJECT')) || hasBytes(all, u16('Macros'))) return 'マクロ入りの書類は付けられません（マクロなしで保存し直してください）';
+    return null;
+  }
+  return null;
+}
+// zip（xlsx・docx）の中の一覧と、1つ取り出す（ライブラリを使わずに読む）
+async function zipEntries(f) {
+  const buf = new Uint8Array(await f.arrayBuffer()); const dv = new DataView(buf.buffer);
+  let e = buf.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('zip');
+  const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true); const out = [];
+  for (let i = 0; i < n; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('zip');
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    out.push({ name: new TextDecoder().decode(buf.slice(p + 46, p + 46 + nl)), method, csize, off, buf });
+    p += 46 + nl + xl + cl;
+  }
+  return out;
+}
+async function zipRead(ent) {
+  const dv = new DataView(ent.buf.buffer); const p = ent.off;
+  const start = p + 30 + dv.getUint16(p + 26, true) + dv.getUint16(p + 28, true);
+  const data = ent.buf.slice(start, start + ent.csize);
+  if (ent.method === 0) return new TextDecoder().decode(data);
+  if (ent.csize > 20 * 1024 * 1024) throw new Error('big');
+  const ds = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(ds).text();
+}
+async function previewHtml(blob, name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (/^(jpe?g|png|webp)$/.test(ext)) return `<img class="pvimg" src="${URL.createObjectURL(blob)}" alt="${esc(name)}">`;
+  if (ext === 'pdf') return `<iframe class="pvpdf" src="${URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))}" title="${esc(name)}"></iframe>`;
+  if (ext === 'xlsx') {
+    const ents = await zipEntries(blob); const get = n => ents.find(e => e.name === n);
+    const xp = s => new DOMParser().parseFromString(s, 'application/xml');
+    const ss = get('xl/sharedStrings.xml') ? [...xp(await zipRead(get('xl/sharedStrings.xml'))).getElementsByTagName('si')].map(si => [...si.getElementsByTagName('t')].map(t => t.textContent).join('')) : [];
+    const sh = get('xl/worksheets/sheet1.xml'); if (!sh) return '<p class="sub">中身を読めませんでした</p>';
+    const doc = xp(await zipRead(sh)); const rows = [...doc.getElementsByTagName('row')].slice(0, 60);
+    const col = ref => { const m = /^([A-Z]+)/.exec(ref || ''); return m ? [...m[1]].reduce((a, c) => a * 26 + c.charCodeAt(0) - 64, 0) - 1 : 0; };
+    let maxc = 0; const grid = rows.map(r => { const a = []; [...r.getElementsByTagName('c')].forEach(c => { const i = col(c.getAttribute('r')); if (i > 25) return; const v = c.getElementsByTagName('v')[0]?.textContent ?? [...c.getElementsByTagName('t')].map(t => t.textContent).join(''); a[i] = c.getAttribute('t') === 's' ? ss[+v] ?? '' : v; maxc = Math.max(maxc, i + 1); }); return a; });
+    return `<div class="pvxl"><table>${grid.map(r => `<tr>${Array.from({ length: maxc }, (_, i) => `<td>${esc(r[i] ?? '')}</td>`).join('')}</tr>`).join('')}</table></div><p class="hint">1枚目のシートの、はじめの60行までを出しています（式や色は出ません）。</p>`;
+  }
+  if (ext === 'docx') {
+    const ents = await zipEntries(blob); const d = ents.find(e => e.name === 'word/document.xml'); if (!d) return '<p class="sub">中身を読めませんでした</p>';
+    const doc = new DOMParser().parseFromString(await zipRead(d), 'application/xml');
+    const ps = [...doc.getElementsByTagName('w:p')].map(p => [...p.getElementsByTagName('w:t')].map(t => t.textContent).join('')).slice(0, 300);
+    return `<div class="pvdoc">${ps.map(t => `<p>${esc(t) || '&nbsp;'}</p>`).join('')}</div><p class="hint">文字だけを出しています（表や図、文字の大きさは出ません）。</p>`;
+  }
+  return `<p class="sub">この形（${esc(ext)}）は画面の中ではのぞけません。開いて見てください。</p>`;
+}
+async function showPeek(blob, name, where) {
+  const box = where || $('#peek'); if (!box) return;
+  box.hidden = false;
+  box.innerHTML = `<div class="ph2"><h3>${icon('eye')}${esc(name)}</h3><button class="btn sm" type="button" data-a="hPeekClose">閉じる</button></div><div class="pvbody">読んでいます…</div>`;
+  try { box.querySelector('.pvbody').innerHTML = await previewHtml(blob, name); }
+  catch (_) { box.querySelector('.pvbody').innerHTML = '<p class="sub">中身を読めませんでした。開いて見てください。</p>'; }
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ---------------------------------------------------------------- 押したとき
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-a]'); if (!t) return;
+  const a = t.dataset.a, d = t.dataset;
+  if (!/^h[A-Z]|^goLink$/.test(a)) return;
+  if (a === 'goLink') {
+    const [k, id] = (d.link || '').split(':');
+    const v = { hr: 'hr', contract: 'contracts', license: 'lics', survey: 'survey', stress: 'stress', leave: 'work', card: 'work' }[k];
+    if (!v) return;
+    S.notesOpen = false;
+    go(v);
+    if (k === 'hr') HR.hrOpen = +id; if (k === 'contract') HR.ctOpen = +id; if (k === 'survey') HR.svOpen = +id;
+    render();
+    if (k === 'leave') setTimeout(() => $('#wishPanel')?.scrollIntoView({ behavior: 'smooth' }), 50);
+    if (k === 'card') setTimeout(() => $('#cardPanel')?.scrollIntoView({ behavior: 'smooth' }), 50);
+    return;
+  }
+  if (a === 'hWishKind') { HR.wishKind = d.k; render(); return; }
+  if (a === 'hWishYm') { HR.wishYm = d.ym; render(); return; }
+  if (a === 'hWish') {
+    if (HR.wBusy) return; HR.wBusy = true;
+    const cur = S.wishes.find(w => w.staff_id === S.me.id && w.day === d.day);
+    const kind = cur && cur.kind === HR.wishKind ? '' : HR.wishKind;
+    try {
+      const { error } = await sb.rpc('wish_set', { p_day: d.day, p_kind: kind || null });
+      if (error) { toast(error.message); return; }
+      S.wishes = S.wishes.filter(w => !(w.staff_id === S.me.id && w.day === d.day));
+      if (kind) S.wishes.push({ id: 0, staff_id: S.me.id, day: d.day, kind, note: '' });
+      const y = window.scrollY; render(); window.scrollTo(0, y);
+    } finally { HR.wBusy = false; }
+    return;
+  }
+  if (a === 'hWishCsv') { wishCsv(); return; }
+  if (a === 'hWishClose') { const wm = S.wishMonths.find(w => w.ym === d.ym); await rpc('wish_month_set', { p_ym: d.ym, p_deadline: wm.deadline, p_closed: true }, '締め切りました'); return; }
+  if (a === 'hReadCard') {
+    const msg = $(d.to === 'clIdm' ? '#clMsg' : '#cfMsg');
+    try {
+      const id = await readCardOnce(m => { if (msg) msg.textContent = m; });
+      if (d.to === 'clIdm') { HR.clIdm = id; HR.cardOpen = true; const x = $('#clIdm'); if (x) x.value = id; if (msg) msg.textContent = `読みました（${fmtIdm(id).slice(0, 5)}…）。番号を入れてください`; $('#clPin')?.focus(); }
+      else { const x = $('#cfIdm'); if (x) x.value = fmtIdm(id); if (msg) msg.textContent = '読みました。職員を選んで「登録する」を押してください'; }
+    } catch (err) { if (msg) msg.textContent = err.message || '読めませんでした'; toast(err.message || '読めませんでした'); }
+    return;
+  }
+  if (a === 'hCardDel') { if (S.cards.find(c => c.id === +d.id)) await rpc('card_remove', { p_id: +d.id }, 'カードを外しました'); return; }
+  if (a === 'hKioskAdd') {
+    const name = $('#kName')?.value || '打刻用の端末';
+    const r = await rpc('kiosk_add', { p_name: name }, 'この端末を打刻用にしました');
+    if (r && r.data) { try { localStorage.setItem('ringi_kiosk', r.data); } catch (_) { toast('この端末に設定を残せませんでした（ブラウザの設定）'); return; }
+      await sb.auth.signOut(); S.me = null; kioskView(); }
+    return;
+  }
+  if (a === 'hKioskDel') { await rpc('kiosk_revoke', { p_id: +d.id }, '打刻用の端末を止めました'); return; }
+  if (a === 'hKioskOpen') { if (S.me) { await sb.auth.signOut(); S.me = null; } kioskView(); return; }
+  if (a === 'hKioskExit') { HR.kRun = false; await FELICA.close(); document.body.classList.remove('kiosk'); loginView(); return; }
+  if (a === 'hKioskStart') {
+    try { await FELICA.connect(); t.hidden = true; kioskMsg('社員証・ICシールを、読み取り機にかざしてください'); kioskLoop(); }
+    catch (err) { kioskMsg(esc(err.message || '読み取り機をつなげませんでした'), 'ng'); }
+    return;
+  }
+  if (a === 'hSiteHere') {
+    const g = await getPlace(); if (!g) return;
+    await rpc('site_set', { p_lat: g.p_lat, p_lng: g.p_lng, p_radius: +($('#siteR')?.value || 300) }, '病院の場所を、いまいる場所にしました');
+    return;
+  }
+  if (a === 'hHrOpen') { HR.hrOpen = +d.id; render(); window.scrollTo({ top: 0 }); return; }
+  if (a === 'hHrBack') { HR.hrOpen = null; render(); return; }
+  if (a === 'hHrSave') { await rpc('hr_save', { p_id: +d.id, p_form: hrFormVal(+d.id), p_submit: false }, '残しました'); return; }
+  if (a === 'hHrChk') { await rpc('hr_check', { p_id: +d.id, p_key: d.k, p_on: t.checked }); return; }
+  if (a === 'hHrReturn') { await rpc('hr_back', { p_id: +d.id, p_note: $('#hrBackNote')?.value || '' }, '本人に直してもらうよう知らせました'); return; }
+  if (a === 'hHrDone') { await rpc('hr_done', { p_id: +d.id }, '手続きを終えました'); return; }
+  if (a === 'hCtOpen') { HR.ctOpen = +d.id; render(); window.scrollTo({ top: 0 }); return; }
+  if (a === 'hCtBack') { HR.ctOpen = null; render(); return; }
+  if (a === 'hCtPrint') { doPrint(); return; }
+  if (a === 'hCtVoid') { await rpc('contract_void', { p_id: +d.id, p_note: $('#ctVoidNote')?.value || '' }, '取り消しました'); return; }
+  if (a === 'hCtVerify') { const { data, error } = await sb.rpc('contract_verify', { p_id: +d.id }); const el = $('#ctVer'); if (el) el.innerHTML = error ? esc(error.message) : data ? `<span class="okm">${icon('check')}書きかえられていません（しるしが合っています）</span>` : '<b class="neg">しるしが合いません。書きかえられた可能性があります</b>'; return; }
+  if (a === 'hLicEdit') { HR.licEdit = +d.id; render(); setTimeout(() => $('#licForm')?.scrollIntoView({ behavior: 'smooth' }), 30); return; }
+  if (a === 'hLicCancel') { HR.licEdit = null; render(); return; }
+  if (a === 'hLicDel') { const ok = await rpc('license_delete', { p_id: +d.id }, '消しました'); if (ok) { HR.licEdit = null; render(); } return; }
+  if (a === 'hLicCheck') { await rpc('license_check', { p_id: +d.id }, '原本を確かめた印を付けました'); return; }
+  if (a === 'hSvNew') { HR.svNew = !HR.svNew; HR.svQs = null; render(); return; }
+  if (a === 'hSmAdd') { svQsRead(); HR.svQs.push({ kind: 'scale', label: '' }); render(); return; }
+  if (a === 'hSvOpen') { HR.svOpen = +d.id; render(); window.scrollTo({ top: 0 }); return; }
+  if (a === 'hSvBack') { HR.svOpen = null; render(); return; }
+  if (a === 'hSvClose') { await rpc('survey_close', { p_id: +d.id }, '締め切りました'); return; }
+  if (a === 'hSvRes') { const { data, error } = await sb.rpc('survey_result', { p_id: +d.id }); const box = $('#svResBox'); if (box) box.innerHTML = error ? `<p class="sub">${esc(error.message)}</p>` : svResHtml(data); return; }
+  if (a === 'hStInt') { await rpc('stress_interview', { p_run: +d.run }, '申し出ました。面接の日は総務から連絡があります'); return; }
+  if (a === 'hStSum') { const { data, error } = await sb.rpc('stress_summary', { p_run: +d.run }); const box = $('#stSumBox'); if (box) box.innerHTML = error ? `<p class="sub">${esc(error.message)}</p>` : `<p><b class="num">${data.n}</b>人／${data.total}人が受けました（${Math.round(data.n / Math.max(1, data.total) * 100)}%）</p>${data.group ? `<p class="sub">全体の平均：仕事の負担 ${data.group.a}・心と体 ${data.group.b}・周りの支えの少なさ ${data.group.c}</p>` : '<p class="sub">10人より少ないので、平均は出しません。</p>'}${(data.depts || []).length ? `<ul>${data.depts.map(x => `<li>${esc(x.dept)}（${x.n}人）：${x.a}・${x.b}・${x.c}</li>`).join('')}</ul>` : ''}`; return; }
+  if (a === 'hPeek') {
+    const f = S.files.find(x => x.id === +d.f); if (!f) return;
+    const { data, error } = await sb.storage.from(BUCKET).download(f.path);
+    if (error || !data) { toast('書類を読めませんでした。見られるのは申請した人・回る先の人・総務だけです'); return; }
+    showPeek(data, f.name); return;
+  }
+  if (a === 'hPeekPick') { const f = S.pick[+d.i]; if (f) showPeek(f, f.name, $('#peekPick')); return; }
+  if (a === 'hPeekClose') { const b = t.closest('.peek'); if (b) { b.hidden = true; b.innerHTML = ''; } return; }
+});
+function hrFormVal(id) {
+  const p = S.procs.find(x => x.id === id); const f = { ...(p?.form || {}) };
+  HR_FIELDS[p.kind].forEach(([k]) => { const v = $(`#hf_${k}`)?.value; if (v != null) f[k] = v.trim(); });
+  return f;
+}
+function svQsRead() {
+  (HR.svQs || []).forEach((q, i) => { const l = document.querySelector(`.smL[data-i="${i}"]`); const o = document.querySelector(`.smO[data-i="${i}"]`); if (l) q.label = l.value; if (o) q.options = o.value; });
+}
+document.addEventListener('change', async e => {
+  const el = e.target;
+  if (el.id === 'pcGeo') { try { localStorage.setItem('ringi_geo', el.checked ? '1' : '0'); } catch (_) {} return; }
+  if (el.dataset?.a === 'hSmKind') { svQsRead(); HR.svQs[+el.dataset.i].kind = el.value; render(); return; }
+  if (el.id === 'nfSum') {
+    if (!el.checked) { S.repNums = null; $('#nfSumBox').innerHTML = ''; return; }
+    $('#nfSumBox').innerHTML = '<p class="sub">数字を集めています…</p>';
+    const { data, error } = await sb.rpc('report_numbers');
+    if (error) { el.checked = false; $('#nfSumBox').innerHTML = `<p class="sub">${esc(error.message)}</p>`; return; }
+    S.repNums = data; $('#nfSumBox').innerHTML = repSumHtml(data);
+  }
+});
+document.addEventListener('submit', async e => {
+  const f = e.target;
+  const stop = () => e.preventDefault();
+  if (f.id === 'pinForm') { stop(); const v = $('#pinNew').value.trim(); const ok = await rpc('card_pin_set', { p_pin: v }, 'カードで入るときの番号を決めました'); if (ok) HR.pinSet = true; return; }
+  if (f.id === 'cardForm') { stop(); await rpc('card_add', { p_staff: $('#cfWho').value, p_idm: $('#cfIdm').value, p_label: $('#cfLabel').value }, 'カードを登録しました'); return; }
+  if (f.id === 'kForm') { stop(); const v = $('#kIdm').value; $('#kIdm').value = ''; await kioskPunch(normIdm(v)); return; }
+  if (f.id === 'clf') { stop(); const idm = $('#clIdm').value, pin = $('#clPin').value.trim(); if (!idm) { toast('先にカードを読んでください'); return; } if (!/^\d{4}$/.test(pin)) { toast('番号は4けたの数字です'); return; } await cardLogin(idm, pin); return; }
+  if (f.id === 'hrStart') { stop(); await rpc('hr_start', { p_staff: $('#hsWho').value, p_kind: '入職', p_due: $('#hsDay').value }, '手続きを始めました。本人に知らせました'); return; }
+  if (f.id === 'hrForm') { stop(); await rpc('hr_save', { p_id: +f.dataset.id, p_form: hrFormVal(+f.dataset.id), p_submit: true }, '総務へ出しました'); return; }
+  if (f.id === 'ctNew') { stop(); const terms = [...f.querySelectorAll('input[data-k]')].filter(i => i.value.trim()).map(i => ({ k: i.dataset.k, v: i.value.trim() }));
+    await rpc('contract_send', { p_staff: $('#ctWho').value, p_title: $('#ctTitle').value, p_terms: terms }, '契約書を送りました'); return; }
+  if (f.id === 'ctSign') { stop(); await rpc('contract_sign', { p_id: +f.dataset.id, p_name: $('#ctName').value, p_agree: $('#ctAgree').checked }, '同意しました。総務に知らせました'); return; }
+  if (f.id === 'lf2') { stop(); const id = f.dataset.id ? +f.dataset.id : null;
+    const ok = await rpc('license_save', { p_id: id, p_staff: $('#lcWho')?.value || null, p_name: $('#lcName').value, p_number: $('#lcNo').value, p_got: $('#lcGot').value || null, p_expires: $('#lcExp').value || null, p_note: '' }, id ? '直しました' : '足しました');
+    if (ok) { HR.licEdit = null; render(); } return; }
+  if (f.id === 'svMake') { stop(); svQsRead();
+    const qs = HR.svQs.filter(q => q.label.trim()).map((q, i) => ({ k: 'q' + (i + 1), kind: q.kind, label: q.label.trim(), ...(q.kind === 'choice' ? { options: String(q.options || '').split(/[、,]/).map(s => s.trim()).filter(Boolean) } : {}) }));
+    const ok = await rpc('survey_create', { p_title: $('#smTitle').value, p_body: $('#smBody').value, p_questions: qs, p_dept: $('#smDept').value ? +$('#smDept').value : null, p_until: $('#smUntil').value || null }, 'アンケートを出しました');
+    if (ok) { HR.svNew = false; HR.svQs = null; render(); } return; }
+  if (f.id === 'svAns') { stop(); const v = S.surveys.find(x => x.id === +f.dataset.id); const ans = {};
+    (v.questions || []).forEach(q => { const el = q.kind === 'text' ? f.querySelector(`[name="q_${q.k}"]`) : f.querySelector(`[name="q_${q.k}"]:checked`); if (el && el.value.trim()) ans[q.k] = el.value.trim(); });
+    if (!Object.keys(ans).length) { toast('1つ以上答えてください'); return; }
+    await rpc('survey_answer', { p_id: v.id, p_answers: ans }, '答えました。ありがとうございました'); return; }
+  if (f.id === 'stForm') { stop(); const ans = {};
+    for (let i = 1; i <= 12; i++) { const el = f.querySelector(`[name="st_${i}"]:checked`); if (!el) { toast(`${i}番目の質問に答えてください`); f.querySelector(`[name="st_${i}"]`)?.focus(); return; } ans['q' + i] = +el.value; }
+    await rpc('stress_answer', { p_run: +f.dataset.run, p_answers: ans }, '答えました。結果を見てください'); return; }
+});
+
+// 起動のとき：打刻用の端末として開く（?kiosk か #kiosk、またはこの端末が打刻用で、まだログインしていないとき）
+if (/[?#&]kiosk\b/.test(location.search + location.hash) && kioskKey()) {
+  window.addEventListener('load', () => setTimeout(async () => { const { data } = await sb.auth.getSession(); if (!data.session) kioskView(); }, 300));
+}
 
 // 打刻の時計を進める
 setInterval(() => { const c = $('#pcClock'); if (c) c.textContent = hmOf(Date.now()); }, 15000);
