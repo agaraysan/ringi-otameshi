@@ -201,8 +201,9 @@ const proxyTargets = () => S.staff.filter(s => s.id !== S.me.id && (S.me.is_soum
 
 const TABLES = ['staff', 'ringi_types', 'route_steps', 'ringi', 'ringi_route', 'ringi_log', 'notices', 'depts', 'posts', 'ringi_files', 'shifts', 'work', 'away', 'leave_grant', 'budgets',
   'ringi_signs', 'ringi_circ', 'purchase', 'ot_hist', 'bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log',
-  'staff_hr', 'leave_auto_log', 'wish_months', 'shift_wishes', 'sites', 'cards', 'kiosks', 'hr_procs', 'contracts', 'licenses', 'surveys', 'survey_done', 'hr_roles', 'stress_runs', 'stress_results'];
-const HR_TABLES = TABLES.slice(TABLES.indexOf('staff_hr'));
+  'staff_hr', 'leave_auto_log', 'wish_months', 'shift_wishes', 'sites', 'cards', 'kiosks', 'hr_procs', 'contracts', 'licenses', 'surveys', 'survey_done', 'hr_roles', 'stress_runs', 'stress_results',
+  'dorms', 'dorm_rooms', 'dorm_stays', 'dorm_ins'];
+const HR_TABLES = TABLES.slice(TABLES.indexOf('staff_hr'), TABLES.indexOf('stress_results') + 1);
 // 画面に要るものを読む。ふだんは「まとめて読む」手続き（load_all）で1回だけたのむ。
 // Supabase に貼り直す前（手続きがまだない）ときだけ、表を3本ずつ順に読む（無料枠のサーバーの受け口があふれないように）。
 async function loadAll() {
@@ -219,6 +220,8 @@ async function loadAll() {
     S.flowReady = 'ringi_signs' in data; S.boardReady = 'bulletins' in data;
     // 人事・手続き・カードは、今回の貼り直しのあとから
     S.hrReady = 'staff_hr' in data;
+    // 職員寮の火災保険も、今回の貼り直しのあとから
+    S.dormReady = 'dorms' in data;
   } else {
     const res = [];
     for (let i = 0; i < TABLES.length; i += 3) res.push(...await Promise.all(TABLES.slice(i, i + 3).map(t => sb.from(t).select('*'))));
@@ -231,6 +234,7 @@ async function loadAll() {
     S.flowReady = soft('ringi_signs', 'ringi_circ', 'purchase', 'ot_hist');
     S.boardReady = soft('bulletins', 'bulletin_reads', 'resources', 'bookings', 'docs', 'doc_versions', 'ask_log');
     S.hrReady = soft(...HR_TABLES);
+    S.dormReady = soft('dorms', 'dorm_rooms', 'dorm_stays', 'dorm_ins');
     const bad = res.map((r, i) => r.error ? `${TABLES[i]}：${r.error.code || r.error.status || ''} ${r.error.message || ''}` : null).filter(Boolean);
     if (bad.length) throw new Error(bad.join(' ／ '));
     data = Object.fromEntries(TABLES.map((t, i) => [t, res[i].data || []]));
@@ -238,7 +242,8 @@ async function loadAll() {
   const g = t => data[t] || [];
   [S.staff, S.types, S.steps, S.ringi, S.route, S.log, S.notices, S.depts, S.posts, S.files, S.shifts, S.work, S.away, S.leave, S.budgets,
    S.signs, S.circ, S.buy, S.otHist, S.bul, S.bulReads, S.res, S.book, S.docs, S.docv, S.asks,
-   S.hr, S.leaveLog, S.wishMonths, S.wishes, S.sites, S.cards, S.kiosks, S.procs, S.contracts, S.lics, S.surveys, S.svDone, S.hrRoles, S.stressRuns, S.stress] = TABLES.map(g);
+   S.hr, S.leaveLog, S.wishMonths, S.wishes, S.sites, S.cards, S.kiosks, S.procs, S.contracts, S.lics, S.surveys, S.svDone, S.hrRoles, S.stressRuns, S.stress,
+   S.dorms, S.dRooms, S.dStays, S.dIns] = TABLES.map(g);
   S.res.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.docs.sort((a, b) => a.sort - b.sort || a.id - b.id);
   S.bul.sort((a, b) => b.id - a.id);
@@ -443,7 +448,7 @@ function navHtml() {
     ${S.hrReady ? hrNav(b) : ''}
     ${S.flowReady && (S.me.is_soumu || S.me.is_boss) ? b('ot', '勤怠の見張り', 'warn', (() => { const n = watchPeople().filter(x => otStat(x.id).level !== 'ok').length; return n ? `<span class="badge warn" title="気をつける人">${n}</span>` : ''; })()) : ''}
     ${S.flowReady && (S.me.is_soumu || isKeiri() || isShisetsu()) ? b('buy', '購入の進み', 'cart') : ''}
-    ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}${S.flowReady ? b('audit', '監査の記録', 'shield') : ''}${S.hrReady ? b('cards', 'カードと打刻の端末', 'card') : ''}` : ''}
+    ${S.me.is_soumu ? `<div class="ngroup">総務</div>${b('all', '全体の一覧', 'all')}${b('admin', '種類と回る順番', 'admin')}${S.flowReady ? b('audit', '監査の記録', 'shield') : ''}${S.hrReady ? b('cards', 'カードと打刻の端末', 'card') : ''}${S.dormReady ? b('dorm', '寮の火災保険', 'home', dormAlertN() ? `<span class="badge warn" title="解約・期限">${dormAlertN()}</span>` : '') : ''}` : ''}
     <div class="ngroup">使い方</div>${b('howto', 'お試しの進め方', 'info')}
   </div>`;
   return main + sub;
@@ -469,7 +474,7 @@ function render() {
 
 // お知らせの行を押したときの行き先（申請・院内のお知らせ）
 const noteAttr = n => n.ringi_id ? `data-open="${n.ringi_id}"` : /^bulletin:\d+$/.test(n.link || '') ? `data-a="goBul" data-b="${n.link.split(':')[1]}"`
-  : /^(hr|contract|license|survey|stress):\d+$/.test(n.link || '') ? `data-a="goLink" data-link="${esc(n.link)}"` : ['leave', 'card'].includes(n.link) ? `data-a="goLink" data-link="${esc(n.link)}"` : '';
+  : /^(hr|contract|license|survey|stress|dorm):\d+$/.test(n.link || '') ? `data-a="goLink" data-link="${esc(n.link)}"` : ['leave', 'card'].includes(n.link) ? `data-a="goLink" data-link="${esc(n.link)}"` : '';
 // ホームに出す「回覧」と「読んでほしいお知らせ」
 function homeAlerts() {
   const cs = myCirc(), bs = bulToRead();
@@ -518,6 +523,7 @@ function quickCards() {
   ];
   const todo = myTodo();
   if (todo) items.push(['warn', 'back', '勤務の確かめ', '勤務', todo, 'data-nav="work"', '打刻もれ・退勤のずれなど、確かめること']);
+  if (missApplies()) items.push(['file', 'back', '未提出', '未提出', missItems().length, 'data-nav="todo" data-to="tdMiss"', '出すものを、まだ出していない人（寮の証券の写し・休みの希望など）']);
   return items.map(([ic, cls, l, sh, n, nav, tip]) => `<button type="button" class="qcard ${n ? cls : 'zero'} ${nav.includes('"work"') ? 'qwork' : ''}" ${nav} title="${tip}"><span class="qi">${icon(ic)}</span><span class="qn num">${n}</span><span class="ql">${l}</span><span class="qs">${sh}</span></button>`).join('');
 }
 // ---------------------------------------------------------------- それぞれの画面
@@ -528,7 +534,8 @@ VIEWS.todo = function () {
   const li = x => `<li class="click" ${x.attr}><span class="tdi">${icon(x.ic)}</span><div class="x"><b>${esc(x.title)}</b><span>${esc(x.kind)}・${x.sub}</span></div>${x.left != null ? `<span class="lbl ${x.left < 0 ? 'back' : x.left <= 1 ? 'wait' : 'line'} sm">${leftText(x.left)}</span>` : ''}${icon('chevr')}</li>`;
   return `${pageHead('やること', 'あなたに読んでほしいものと、期限が近いものです。画面のいちばん上の数と同じです。')}
   <section class="panel flush" id="tdRead"><div class="panel-h"><h2>読んでほしいもの（${rd.length}件）</h2></div>${rd.length ? `<ul class="mini">${rd.map(li).join('')}</ul>` : emptyArt('いま読んでほしいものはありません')}</section>
-  <section class="panel flush" id="tdDue"><div class="panel-h"><h2>期限が近いもの（${du.length}件）</h2><span class="sub">3日以内に期限が来るもの・過ぎたもの</span></div>${du.length ? `<ul class="mini">${du.map(li).join('')}</ul>` : emptyArt('期限が近いものはありません')}</section>`;
+  <section class="panel flush" id="tdDue"><div class="panel-h"><h2>期限が近いもの（${du.length}件）</h2><span class="sub">3日以内に期限が来るもの・過ぎたもの</span></div>${du.length ? `<ul class="mini">${du.map(li).join('')}</ul>` : emptyArt('期限が近いものはありません')}</section>
+  ${missApplies() ? missPanel(li) : ''}`;
 };
 
 
@@ -625,6 +632,7 @@ VIEWS.howto = function () {
     '<b>青木さん</b>で「カードと打刻の端末」を開き、カードを登録する。<b>この端末を打刻用にする</b>と、カードをかざすだけで打刻できる画面になる（読み取り機がないときは番号を手で入れて試せる）。ログインの画面の<b>「カードで入る」</b>は、カード＋4けたの番号で入る',
     '<b>森事務長</b>で「申請する」の<b>理事への報告</b>を出す（<b>数字のまとめ</b>を付けられる）。<b>近藤理事長</b>（<code>kondo</code>）と<b>岡田経理課長</b>だけに回り、<b>「見た」とひとこと</b>を返す。ほかの人には見えない',
     '申請に書類を付けるとき、<b>マクロ入りのExcel</b>や<b>名前を変えたプログラム</b>ははじかれる。付けた書類は<b>「のぞく」</b>で画面の中で中身を見られる。決裁された稟議の<b>印刷はA4の1枚</b>に収まる',
+    '<b>総務の青木さん</b>で「寮の火災保険」を開く。<b>切れそうなもの・切れたもの・解約が要るもの</b>（退寮・退職）が色で分かれる。証券の写しがまだの<b>前田さん</b>の保険を、PDF を付けて登録する。<b>中村さん</b>で入ると、メニューにも出ず見られない。上のカード<b>「未提出」</b>から、出していない人の一覧へ飛べる',
   ];
   return `${pageHead('お試しの進め方', '1時間ほどで、申請から決裁、勤怠、お知らせ・予約・文書までを一通り試せます。人を変えるときは、右上の「ログアウト」から入り直します。')}
   <section class="panel"><ol class="steps">${steps.map(s => `<li><div>${s}</div></li>`).join('')}</ol>
@@ -2586,6 +2594,7 @@ window.EXTRA_READ = [() => {
   S.surveys.filter(v => surveyOpen(v) && surveyFor(v) && !svAnswered(v)).forEach(v => out.push({ ic: 'form', kind: 'アンケート', title: v.title, attr: `data-a="goLink" data-link="survey:${v.id}"`, sub: v.until_d ? `${md(v.until_d)}まで・名前は残りません` : '名前は残りません' }));
   const run = stressRun();
   if (run && !myStress(run) && !futureHire(S.me.id)) out.push({ ic: 'heart', kind: 'ストレスチェック', title: run.title, attr: `data-a="goLink" data-link="stress:${run.id}"`, sub: `${md(run.open_until)}まで・結果は本人と実施者だけ` });
+  if (S.dormReady && S.me.is_soumu) S.dIns.filter(i => i.status === 'active' && dormState(i) === 'cancel').forEach(i => out.push({ ic: 'home', kind: '寮の火災保険', title: `${P(i.staff_id).name}さんの火災保険の解約`, attr: `data-a="goLink" data-link="dorm:${i.id}"`, sub: `${esc(dRoomName(i.room_id))}・${dCancelWhy(i)}。解約したら「解約した」を押す` }));
   return out;
 }];
 window.EXTRA_DUE = [() => {
@@ -2596,6 +2605,7 @@ window.EXTRA_DUE = [() => {
   if (wm && daysTo(wm.deadline) <= 3 && P(S.me.id).dept && /病棟/.test(P(S.me.id).dept) && !S.wishes.some(w => w.staff_id === S.me.id && w.day.startsWith(wm.ym)))
     out.push({ ic: 'cal', kind: '休みの希望', title: `${monthLabel(wm.ym)}の休みの希望`, attr: 'data-a="goLink" data-link="leave"', left: daysTo(wm.deadline), sub: `締め切り ${md(wm.deadline)}` });
   S.surveys.filter(v => surveyOpen(v) && surveyFor(v) && !svAnswered(v) && v.until_d && daysTo(v.until_d) <= 3).forEach(v => out.push({ ic: 'form', kind: 'アンケート', title: v.title, attr: `data-a="goLink" data-link="survey:${v.id}"`, left: daysTo(v.until_d), sub: `締め切り ${md(v.until_d)}` }));
+  if (S.dormReady && S.me.is_soumu) S.dIns.filter(i => i.status === 'active' && ['soon', 'expired'].includes(dormState(i)) && daysTo(i.to_d) >= -60).forEach(i => out.push({ ic: 'home', kind: '寮の火災保険', title: `${P(i.staff_id).name}さん（${dRoomName(i.room_id)}）`, attr: `data-a="goLink" data-link="dorm:${i.id}"`, left: daysTo(i.to_d), sub: `${esc(i.company)}・${md(i.to_d)}まで` }));
   return out;
 }];
 
@@ -3156,12 +3166,15 @@ document.addEventListener('click', async e => {
   if (!/^h[A-Z]|^goLink$/.test(a)) return;
   if (a === 'goLink') {
     const [k, id] = (d.link || '').split(':');
-    const v = { hr: 'hr', contract: 'contracts', license: 'lics', survey: 'survey', stress: 'stress', leave: 'work', card: 'work' }[k];
+    const v = { hr: 'hr', contract: 'contracts', license: 'lics', survey: 'survey', stress: 'stress', leave: 'work', card: 'work', dorm: 'dorm', wish: 'team' }[k];
     if (!v) return;
     S.notesOpen = false;
     go(v);
     if (k === 'hr') HR.hrOpen = +id; if (k === 'contract') HR.ctOpen = +id; if (k === 'survey') HR.svOpen = +id;
+    if (k === 'dorm') { DM.form = null; DM.hi = +id; } if (k === 'wish') S.teamDept = +id;
     render();
+    if (k === 'dorm') setTimeout(() => $(`#dmi${+id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+    if (k === 'wish') setTimeout(() => $('.wishteam')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     if (k === 'leave') setTimeout(() => $('#wishPanel')?.scrollIntoView({ behavior: 'smooth' }), 50);
     if (k === 'card') setTimeout(() => $('#cardPanel')?.scrollIntoView({ behavior: 'smooth' }), 50);
     return;
@@ -3292,6 +3305,231 @@ document.addEventListener('submit', async e => {
     for (let i = 1; i <= 12; i++) { const el = f.querySelector(`[name="st_${i}"]:checked`); if (!el) { toast(`${i}番目の質問に答えてください`); f.querySelector(`[name="st_${i}"]`)?.focus(); return; } ans['q' + i] = +el.value; }
     await rpc('stress_answer', { p_run: +f.dataset.run, p_answers: ans }, '答えました。結果を見てください'); return; }
 });
+
+// ---------------------------------------------------------------- 職員寮の火災保険（見る・直すのは総務だけ）
+const DORM_BUCKET = 'dorm-files';
+const DM = {};
+const DST = { ok: ['ok', '有効'], soon: ['wait', 'まもなく切れる'], expired: ['back', '切れている'], cancel: ['back', '解約が要る'], cancelled: ['line', '解約ずみ'] };
+const dRoom = id => S.dRooms.find(r => r.id === id);
+const dDorm = id => S.dorms.find(d => d.id === id);
+const dRoomName = id => { const r = dRoom(id); return r ? `${dDorm(r.dorm_id)?.name || ''} ${r.name}` : '部屋なし'; };
+// いま住んでいる（退寮の日が決まっていても、その日までは住んでいる）・これから入る
+const dStayOf = roomId => S.dStays.filter(s => s.room_id === roomId && (!s.to_d || s.to_d >= todayYmd())).sort((a, b) => a.from_d.localeCompare(b.from_d))[0];
+const dLeft = id => myHr(id)?.left_on;
+function dormState(i) {
+  if (i.status === 'cancelled') return 'cancelled';
+  if (i.to_d < todayYmd()) return 'expired';
+  if (!S.dStays.some(s => s.room_id === i.room_id && s.staff_id === i.staff_id && !s.to_d) || dLeft(i.staff_id)) return 'cancel';
+  if (daysTo(i.to_d) <= 30) return 'soon';
+  return 'ok';
+}
+function dCancelWhy(i) {
+  const l = dLeft(i.staff_id); if (l) return `退職 ${md(l)}`;
+  const s = S.dStays.filter(x => x.room_id === i.room_id && x.staff_id === i.staff_id && x.to_d).sort((a, b) => b.to_d.localeCompare(a.to_d))[0];
+  return s ? `退寮 ${md(s.to_d)}` : '住んでいない';
+}
+// 証券の写しを出していない人（住んでいる人で、保険の登録がない・写しがない）
+function dormMiss() {
+  if (!S.dormReady || !S.me.is_soumu) return [];
+  // 退職が決まった人は、解約のほうを知らせるので入れない
+  return S.dStays.filter(s => !s.to_d && !dLeft(s.staff_id)).map(s => {
+    const ins = S.dIns.find(i => i.status === 'active' && i.staff_id === s.staff_id && i.room_id === s.room_id);
+    if (ins && ins.file_path) return null;
+    return { stay: s, ins, why: ins ? '証券の写しがまだ' : '火災保険の登録がまだ' };
+  }).filter(Boolean);
+}
+const dormAlertN = () => S.dIns.filter(i => i.status === 'active' && ['cancel', 'soon', 'expired'].includes(dormState(i))).length;
+
+VIEWS.dorm = function () {
+  if (!S.dormReady || !S.me.is_soumu) return VIEWS.home();
+  const act = S.dIns.filter(i => i.status === 'active');
+  const n = k => act.filter(i => dormState(i) === k).length;
+  const miss = dormMiss();
+  const lbl = i => { const s = dormState(i); const [c, l] = DST[s];
+    const x = s === 'soon' ? `${l}（あと${daysTo(i.to_d)}日）` : s === 'cancel' ? `${l}（${dCancelWhy(i)}）` : s === 'cancelled' && i.cancelled_on ? `${l}（${md(i.cancelled_on)}）` : l;
+    return `<span class="lbl ${c} sm">${x}</span>`; };
+  const fileCell = i => i.file_path ? `<button class="btn sm text" type="button" data-a="hDmOpen" data-id="${i.id}">${icon('file')}開く</button><button class="btn sm text" type="button" data-a="hDmPeek" data-id="${i.id}">${icon('eye')}のぞく</button>`
+    : i.status === 'active' ? '<span class="lbl back sm">未提出</span>' : '<span class="muted">なし</span>';
+  const acts = i => i.status !== 'active' ? '' : `<button class="btn sm" type="button" data-a="hDmEdit" data-id="${i.id}">直す</button>
+    ${['soon', 'expired'].includes(dormState(i)) ? `<button class="btn sm" type="button" data-a="hDmRenew" data-id="${i.id}">更新した</button>` : ''}
+    <button class="btn sm ${dormState(i) === 'cancel' ? 'primary' : 'text'}" type="button" data-a="hDmCancel" data-id="${i.id}">解約した</button>`;
+  const insCells = i => `<td class="c-ins"><b>${esc(i.company)}</b><span class="sub num">${esc(i.policy_no)}</span></td>
+    <td class="c-per num">${i.from_d.replace(/-/g, '/')}〜<br>${i.to_d.replace(/-/g, '/')}${i.premium != null ? `<span class="sub">保険料 ${yen(i.premium)}</span>` : ''}</td>
+    <td class="c-st">${lbl(i)}</td><td class="c-file">${fileCell(i)}</td><td class="c-act">${acts(i)}</td>`;
+  const personCell = (s, i) => {
+    if (s) return `<b>${esc(P(s.staff_id).name)}</b><span class="sub">${esc(P(s.staff_id).dept)}${s.from_d > todayYmd() ? `・${md(s.from_d)} 入寮予定` : ''}${s.to_d ? `・${md(s.to_d)} 退寮` : ''}${dLeft(s.staff_id) ? `・${md(dLeft(s.staff_id))} 退職` : ''}</span>
+      ${!s.to_d ? `<button class="btn sm text" type="button" data-a="hDmOut" data-id="${s.id}">退寮を入れる</button>` : ''}`;
+    if (i) return `<span class="muted">${esc(P(i.staff_id).name)}さん（住んでいない）</span>`;
+    return '<span class="muted">空き部屋</span>';
+  };
+  const roomRows = r => {
+    const s = dStayOf(r.id);
+    const ins = act.filter(i => i.room_id === r.id).sort((a, b) => (a.staff_id === s?.staff_id ? 0 : 1) - (b.staff_id === s?.staff_id ? 0 : 1));
+    const hi = id => DM.hi === id ? 'hi' : '';
+    if (!ins.length) return `<tr><td class="c-room"><b>${esc(r.name)}</b></td><td class="c-who">${personCell(s)}</td>
+      <td class="c-none" colspan="5">${s ? `<span class="lbl back sm">火災保険の登録がまだ</span><button class="btn sm" type="button" data-a="hDmNew" data-room="${r.id}" data-staff="${s.staff_id}">${icon('new')}登録する</button>` : `<button class="btn sm text" type="button" data-a="hDmIn" data-room="${r.id}">入寮を入れる</button>`}</td></tr>`;
+    return ins.map((i, k) => `<tr class="${hi(i.id)}" id="dmi${i.id}"><td class="c-room">${k ? '' : `<b>${esc(r.name)}</b>`}</td><td class="c-who">${k || i.staff_id !== s?.staff_id ? personCell(null, i) : personCell(s)}</td>${insCells(i)}</tr>`).join('')
+      + (!s && ins.length ? `<tr class="sub2"><td></td><td colspan="6"><button class="btn sm text" type="button" data-a="hDmIn" data-room="${r.id}">入寮を入れる</button></td></tr>` : '');
+  };
+  const dormPanel = d => { const rooms = S.dRooms.filter(r => r.dorm_id === d.id).sort((a, b) => a.sort - b.sort || a.id - b.id);
+    return `<section class="panel flush"><div class="panel-h"><h2>${esc(d.name)}</h2><span class="sub">${esc(d.address || '')}・${rooms.length}部屋</span><span class="sp"></span><button class="btn sm text" type="button" data-a="hDmRoom" data-dorm="${d.id}">${icon('new')}部屋を足す</button></div>
+      <div class="dmtab"><table><thead><tr><th>部屋</th><th>住んでいる職員</th><th>保険会社・証券番号</th><th>期間・保険料</th><th>様子</th><th>証券の写し</th><th></th></tr></thead><tbody>${rooms.map(roomRows).join('')}</tbody></table></div></section>`; };
+  const past = S.dIns.filter(i => i.status === 'cancelled').sort((a, b) => (b.cancelled_on || '').localeCompare(a.cancelled_on || ''));
+  return `${pageHead('寮の火災保険', '職員寮の部屋ごとに、住んでいる職員と火災保険を残します。見る・直すのは総務だけです（ほかの職員・上長には見えません）。切れる30日前と、退寮・退職が決まったとき（解約が要る）に、総務へ知らせます（仮）。', `<button class="btn primary" type="button" data-a="hDmNew">${icon('new')}火災保険を登録する</button>`)}
+  ${summary([['ban', 'back', '解約が要る', n('cancel'), 'data-a="noop"'], ['clock', 'wait', '30日以内に切れる', n('soon'), 'data-a="noop"'], ['info', 'back', '切れている', n('expired'), 'data-a="noop"'], ['file', 'turn', '証券の写しが未提出', miss.length, 'data-a="hDmMiss"', '人']])}
+  ${dmForm()}
+  <div class="peek" id="dmPeek" hidden></div>
+  ${miss.length ? `<section class="panel flush" id="dmMiss"><div class="panel-h"><h2>証券の写しを出していない人（${miss.length}人）</h2><span class="sub">寮に住んでいて、火災保険の登録か写し（PDF）がまだの人</span></div>
+    <ul class="mini">${miss.map(m => `<li class="click" data-a="hDmNew" ${m.ins ? `data-id="${m.ins.id}"` : `data-room="${m.stay.room_id}" data-staff="${m.stay.staff_id}"`}><span class="tdi">${icon('file')}</span><div class="x"><b>${esc(P(m.stay.staff_id).name)}さん</b><span>${esc(dRoomName(m.stay.room_id))}・${m.why}${m.stay.from_d > todayYmd() ? `（${md(m.stay.from_d)} 入寮予定）` : ''}</span></div><span class="lbl back sm">未提出</span>${icon('chevr')}</li>`).join('')}</ul></section>` : ''}
+  ${S.dorms.slice().sort((a, b) => a.sort - b.sort || a.id - b.id).map(dormPanel).join('')}
+  <section class="panel"><h2>寮を足す</h2><form id="dmDorm" class="form"><label class="f"><span class="fl">寮の名前</span><input id="ddName" required placeholder="例：あおば寮"></label><label class="f"><span class="fl">住所<span class="opt">なくてもよい</span></span><input id="ddAddr"></label>
+    <div class="actbar inpanel wide"><span class="sp"></span><button class="btn" type="submit">${icon('new')}足す</button></div></form></section>
+  ${past.length ? `<section class="panel flush"><div class="panel-h"><h2>解約ずみの火災保険（${past.length}件）</h2></div><div class="dmtab"><table><thead><tr><th>部屋</th><th>職員</th><th>保険会社・証券番号</th><th>期間・保険料</th><th>様子</th><th>証券の写し</th><th></th></tr></thead>
+    <tbody>${past.map(i => `<tr><td class="c-room">${esc(dRoomName(i.room_id))}</td><td class="c-who">${esc(P(i.staff_id).name)}</td>${insCells(i)}</tr>`).join('')}</tbody></table></div></section>` : ''}`;
+};
+// 登録・直す・更新・入寮・退寮・解約・部屋を足す の入れもの（1つだけ開く）
+function dmForm() {
+  const f = DM.form; if (!f) return '';
+  const close = `<button class="btn" type="button" data-a="hDmClose">やめる</button>`;
+  const staffOpts = (sel, pred = () => true) => S.staff.filter(pred).map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.name)}（${esc(s.dept)}）</option>`).join('');
+  if (f.mode === 'ins') {
+    const i = f.id ? S.dIns.find(x => x.id === f.id) : null;
+    const v = { room: i?.room_id || f.room, staff: i?.staff_id || f.staff || (f.room && dStayOf(f.room)?.staff_id), company: i?.company || '', no: i?.policy_no || '', from: f.from || i?.from_d || '', to: f.to || i?.to_d || '', yen: i?.premium ?? '', note: i?.note || '' };
+    const rooms = S.dorms.slice().sort((a, b) => a.sort - b.sort).map(d => `<optgroup label="${esc(d.name)}">${S.dRooms.filter(r => r.dorm_id === d.id).sort((a, b) => a.sort - b.sort).map(r => `<option value="${r.id}" ${r.id === v.room ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</optgroup>`).join('');
+    return `<section class="panel" id="dmFormP"><h2>${f.renew ? '火災保険の更新を入れる' : i ? '火災保険を直す' : '火災保険を登録する'}</h2>
+    ${f.renew ? '<p class="hint">新しい期間を入れました（前の終わりの次の日から1年・仮）。証券番号が変わったら直して、新しい証券の写しを付けてください。</p>' : ''}
+    <form id="dmIns" class="form" data-id="${i ? i.id : ''}">
+      <label class="f"><span class="fl">部屋</span><select id="diRoom" required><option value="">選ぶ</option>${rooms}</select></label>
+      <label class="f"><span class="fl">保険に入っている職員</span><select id="diWho" required><option value="">選ぶ</option>${staffOpts(v.staff)}</select></label>
+      <label class="f"><span class="fl">保険会社</span><input id="diCo" required value="${esc(v.company)}" placeholder="架空で"></label>
+      <label class="f"><span class="fl">証券番号</span><input id="diNo" required value="${esc(v.no)}" placeholder="架空で"></label>
+      <label class="f"><span class="fl">始まり</span><input id="diFrom" type="date" required value="${v.from}"></label>
+      <label class="f"><span class="fl">終わり</span><input id="diTo" type="date" required value="${v.to}"></label>
+      <label class="f"><span class="fl">保険料（円）<span class="opt">なくてもよい</span></span><input id="diYen" inputmode="numeric" value="${v.yen}"></label>
+      <label class="f"><span class="fl">証券の写し（PDF）<span class="opt">${i?.file_path ? '変えるときだけ選ぶ' : '10MBまで'}</span></span><input id="diFile" type="file" accept=".pdf,application/pdf">${i?.file_path ? `<span class="sub">いま：${esc(i.file_name || '証券.pdf')}</span>` : ''}</label>
+      <label class="f wide"><span class="fl">メモ<span class="opt">なくてもよい</span></span><input id="diNote" value="${esc(v.note)}"></label>
+      <div class="actbar inpanel wide">${close}<span class="sp"></span><button class="btn primary" type="submit">${icon('check')}${i ? '残す' : '登録する'}</button></div></form></section>`;
+  }
+  if (f.mode === 'in') {
+    const busy = new Set(S.dStays.filter(s => !s.to_d).map(s => s.staff_id));
+    return `<section class="panel" id="dmFormP"><h2>入寮を入れる（${esc(dRoomName(f.room))}）</h2><form id="dmIn" class="form" data-room="${f.room}">
+      <label class="f"><span class="fl">入る職員</span><select id="dnWho" required><option value="">選ぶ</option>${staffOpts(null, s => !busy.has(s.id))}</select></label>
+      <label class="f"><span class="fl">入寮の日</span><input id="dnDay" type="date" required value="${todayYmd()}"></label>
+      <div class="actbar inpanel wide">${close}<span class="sp"></span><button class="btn primary" type="submit">${icon('check')}入れる</button></div></form>
+      <p class="hint">入ったら、火災保険の登録と証券の写しをお願いします（まだの間は「未提出」に出ます）。</p></section>`;
+  }
+  if (f.mode === 'out') {
+    const s = S.dStays.find(x => x.id === f.id);
+    return `<section class="panel" id="dmFormP"><h2>退寮を入れる（${esc(P(s?.staff_id).name)}さん・${esc(dRoomName(s?.room_id))}）</h2><form id="dmOut" class="form" data-id="${f.id}">
+      <label class="f"><span class="fl">退寮の日</span><input id="doDay" type="date" required value="${todayYmd()}"></label>
+      <div class="actbar inpanel wide">${close}<span class="sp"></span><button class="btn primary" type="submit">${icon('check')}入れる</button></div></form>
+      <p class="hint">火災保険が残っていれば「解約が要る」になり、総務にお知らせが届きます。</p></section>`;
+  }
+  if (f.mode === 'cancel') {
+    const i = S.dIns.find(x => x.id === f.id);
+    return `<section class="panel" id="dmFormP"><h2>解約した（${esc(P(i?.staff_id).name)}さん・${esc(i?.company || '')}）</h2><form id="dmCan" class="form" data-id="${f.id}">
+      <label class="f"><span class="fl">解約した日</span><input id="dcDay" type="date" required value="${todayYmd()}"></label>
+      <div class="actbar inpanel wide">${close}<span class="sp"></span><button class="btn primary" type="submit">${icon('check')}解約したことにする</button></div></form></section>`;
+  }
+  if (f.mode === 'room') {
+    return `<section class="panel" id="dmFormP"><h2>部屋を足す（${esc(dDorm(f.dorm)?.name || '')}）</h2><form id="dmRoom" class="form" data-dorm="${f.dorm}">
+      <label class="f"><span class="fl">部屋の名前</span><input id="drName" required placeholder="例：204"></label>
+      <div class="actbar inpanel wide">${close}<span class="sp"></span><button class="btn primary" type="submit">${icon('new')}足す</button></div></form></section>`;
+  }
+  return '';
+}
+const dmOpen = form => { DM.form = form; DM.hi = null; render(); setTimeout(() => $('#dmFormP')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
+const dmFileUrl = async i => {
+  if (/^sample\//.test(i.file_path)) return new URL(i.file_path, location.href).href;   // 見本の証券（架空）
+  const { data, error } = await sb.storage.from(DORM_BUCKET).createSignedUrl(i.file_path, 300);
+  return error || !data ? null : data.signedUrl;
+};
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-a]'); if (!t) return;
+  const a = t.dataset.a, d = t.dataset;
+  if (!/^hDm/.test(a)) return;
+  if (a === 'hDmNew') { dmOpen(d.id ? { mode: 'ins', id: +d.id } : { mode: 'ins', room: d.room ? +d.room : null, staff: d.staff || null }); return; }
+  if (a === 'hDmEdit') { dmOpen({ mode: 'ins', id: +d.id }); return; }
+  if (a === 'hDmRenew') { const i = S.dIns.find(x => x.id === +d.id); const from = new Date(`${i.to_d}T12:00:00+09:00`); from.setDate(from.getDate() + 1);
+    const f1 = ymdOf(from.getTime()); const to = new Date(from); to.setFullYear(to.getFullYear() + 1); to.setDate(to.getDate() - 1);
+    dmOpen({ mode: 'ins', id: i.id, renew: true, from: f1, to: ymdOf(to.getTime()) }); return; }
+  if (a === 'hDmIn') { dmOpen({ mode: 'in', room: +d.room }); return; }
+  if (a === 'hDmOut') { dmOpen({ mode: 'out', id: +d.id }); return; }
+  if (a === 'hDmCancel') { dmOpen({ mode: 'cancel', id: +d.id }); return; }
+  if (a === 'hDmRoom') { dmOpen({ mode: 'room', dorm: +d.dorm }); return; }
+  if (a === 'hDmClose') { DM.form = null; render(); return; }
+  if (a === 'hDmMiss') { $('#dmMiss')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (a === 'hDmOpen') { const i = S.dIns.find(x => x.id === +d.id); if (!i) return;
+    const w = window.open('', '_blank'); const url = await dmFileUrl(i);
+    if (!url) { w?.close(); toast('証券の写しを開けませんでした'); return; }
+    if (w) w.location.href = url; else location.href = url; return; }
+  if (a === 'hDmPeek') { const i = S.dIns.find(x => x.id === +d.id); if (!i) return;
+    let blob = null;
+    if (/^sample\//.test(i.file_path)) { const r = await fetch(i.file_path).catch(() => null); blob = r && r.ok ? await r.blob() : null; }
+    else { const { data } = await sb.storage.from(DORM_BUCKET).download(i.file_path); blob = data; }
+    if (!blob) { toast('証券の写しを読めませんでした'); return; }
+    showPeek(blob, i.file_name || '証券.pdf', $('#dmPeek')); return; }
+});
+document.addEventListener('submit', async e => {
+  const f = e.target;
+  if (!/^dm/.test(f.id)) return;
+  e.preventDefault();
+  const done = ok => { if (ok) { DM.form = null; render(); } };
+  if (f.id === 'dmDorm') { const ok = await rpc('dorm_save', { p_id: null, p_name: $('#ddName').value, p_address: $('#ddAddr').value }, '寮を足しました'); if (ok) render(); return; }
+  if (f.id === 'dmRoom') { done(await rpc('dorm_room_add', { p_dorm: +f.dataset.dorm, p_name: $('#drName').value }, '部屋を足しました')); return; }
+  if (f.id === 'dmIn') { done(await rpc('dorm_move_in', { p_room: +f.dataset.room, p_staff: $('#dnWho').value, p_from: $('#dnDay').value }, '入寮を入れました')); return; }
+  if (f.id === 'dmOut') { done(await rpc('dorm_move_out', { p_stay: +f.dataset.id, p_to: $('#doDay').value }, '退寮を入れました')); return; }
+  if (f.id === 'dmCan') { done(await rpc('dorm_ins_cancel', { p_id: +f.dataset.id, p_on: $('#dcDay').value }, '解約したことにしました')); return; }
+  if (f.id === 'dmIns') {
+    const id = f.dataset.id ? +f.dataset.id : null;
+    const old = id ? S.dIns.find(x => x.id === id) : null;
+    const file = $('#diFile').files[0];
+    let path = null;
+    if (file) {
+      if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('証券の写しは PDF にしてください'); return; }
+      if (file.size > MAX_FILE) { toast('大きすぎます（1つ10MBまで）'); return; }
+      const why = await inspectFile(file, { ext: 'pdf', mime: 'application/pdf' }).catch(() => null);
+      if (why) { toast(`「${file.name}」は付けられません：${why}`); return; }
+      path = `ins/${crypto.randomUUID()}.pdf`;
+      const up = await sb.storage.from(DORM_BUCKET).upload(path, await file.arrayBuffer(), { contentType: 'application/pdf', upsert: false });
+      if (up.error) { toast(`証券の写しを置けませんでした（${up.error.message || 'つながりませんでした'}）`); return; }
+    }
+    const yenv = parseInt(toHalf($('#diYen').value || '').replace(/[^0-9]/g, ''), 10);
+    const ok = await rpc('dorm_ins_save', { p_id: id, p_room: +$('#diRoom').value || null, p_staff: $('#diWho').value || null, p_company: $('#diCo').value, p_policy_no: $('#diNo').value,
+      p_from: $('#diFrom').value || null, p_to: $('#diTo').value || null, p_premium: Number.isFinite(yenv) ? yenv : null, p_file_path: path, p_file_name: file ? file.name : null, p_note: $('#diNote').value }, id ? '残しました' : '登録しました');
+    if (!ok) { if (path) sb.storage.from(DORM_BUCKET).remove([path]).then(() => {}); return; }
+    // 写しを差しかえたら、前の写しは消す（見本は消さない）
+    if (path && old?.file_path && /^ins\//.test(old.file_path)) sb.storage.from(DORM_BUCKET).remove([old.file_path]).then(() => {});
+    DM.form = null; DM.hi = ok.data; render();
+    return;
+  }
+});
+
+// ---------------------------------------------------------------- 出していない人（上のカード「未提出」）
+// 総務：寮の証券の写し・雇用契約の同意・入職の手続き。総務と病棟の所属長：休みの希望。
+// アンケートとストレスチェックは、だれが出したかを見せない決まりなので入れない。
+function missItems() {
+  if (!S.hrReady) return [];
+  const out = [];
+  dormMiss().forEach(m => out.push({ ic: 'home', kind: '寮の火災保険', title: `${P(m.stay.staff_id).name}さん`, attr: 'data-nav="dorm" data-to="dmMiss"', sub: `${esc(dRoomName(m.stay.room_id))}・${m.why}` }));
+  if (S.me.is_soumu) {
+    S.contracts.filter(c => c.status === 'sent').forEach(c => out.push({ ic: 'pen', kind: '雇用契約', title: `${P(c.staff_id).name}さん`, attr: `data-a="goLink" data-link="contract:${c.id}"`, sub: `${esc(c.title)}・同意がまだ` }));
+    S.procs.filter(p => p.status === 'input').forEach(p => out.push({ ic: 'user', kind: p.kind + 'の手続き', title: `${P(p.staff_id).name}さん`, attr: `data-a="goLink" data-link="hr:${p.id}"`, sub: `本人の入力がまだ（${md(p.due_d)}まで）` }));
+  }
+  const wm = openWishMonth();
+  if (wm && S.workReady) {
+    const mine = S.me.is_soumu ? null : myBossDepts();
+    S.staff.filter(s => /病棟/.test(s.dept || '') && !dLeft(s.id) && (mine == null || mine.some(d => deptChain(s.dept_id).includes(d)))
+      && !S.wishes.some(w => w.staff_id === s.id && w.day.startsWith(wm.ym)))
+      .forEach(s => out.push({ ic: 'cal', kind: '休みの希望', title: `${s.name}さん`, attr: `data-a="goLink" data-link="wish:${s.dept_id}"`, sub: `${esc(s.dept)}・${monthLabel(wm.ym)}分がまだ（${md(wm.deadline)}締め切り）` }));
+  }
+  return out;
+}
+const missApplies = () => S.hrReady && (S.me.is_soumu || S.depts.some(d => /病棟/.test(d.name) && myBossDepts().some(b => deptChain(d.id).includes(b))));
+function missPanel(li) {
+  const ms = missItems();
+  return `<section class="panel flush" id="tdMiss"><div class="panel-h"><h2>出していない人（${ms.length}件）</h2><span class="sub">${S.me.is_soumu ? '寮の証券の写し・雇用契約の同意・入職の手続き・休みの希望' : '部署の人の休みの希望'}。アンケートとストレスチェックは、だれが出したかを見せない決まりなので入れていません</span></div>${ms.length ? `<ul class="mini">${ms.map(li).join('')}</ul>` : emptyArt('いま出していない人はいません')}</section>`;
+}
 
 // 起動のとき：打刻用の端末として開く（?kiosk か #kiosk、またはこの端末が打刻用で、まだログインしていないとき）
 if (/[?#&]kiosk\b/.test(location.search + location.hash) && kioskKey()) {

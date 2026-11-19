@@ -815,6 +815,10 @@ button.pchip:hover{background:var(--key-soft)}
   .qcard .qn{font-size:17px}
   .qcard .qs{font-size:11px}
   .qcard.qwork{display:none}
+  /* 「未提出」のカードがあるとき（総務・師長）は、0件のカードを隠して、それでも入らなければ横に送れるようにする */
+  .qc:has(.qcard[data-to=tdMiss]) .qcard.zero{display:none}
+  .qc{overflow-x:auto;scrollbar-width:none}
+  .qc .qcard{flex:none}
   .me .logo{display:none}
   .out{white-space:nowrap;padding:0 8px;font-size:13px}
   .logo{font-size:16px;gap:8px}
@@ -1212,3 +1216,36 @@ body.kiosk .main{padding:0;max-width:none}
 .printdoc.ctdoc .ctpre{font-size:10.5pt;line-height:1.8}
 .dtable td > .sub{display:block;font-size:12px}
 .row > .f + .btn,.row > .f ~ .btn{align-self:flex-end}
+
+/* 職員寮の火災保険 */
+.dmtab{overflow-x:auto}
+.dmtab th{padding:10px 8px}
+.dmtab td{font-size:14px;padding:10px 8px;vertical-align:top}
+.dmtab tr > :first-child{padding-left:16px}
+.dmtab td .sub{display:block;font-size:12px}
+.dmtab td.c-per,.dmtab td.c-yen,.dmtab td.c-file,.dmtab td.c-act{white-space:nowrap}
+.dmtab td.c-act .btn,.dmtab td.c-file .btn{margin:0 4px 4px 0}
+.dmtab td.c-none .btn{margin-left:8px}
+.dmtab td.c-who .btn{display:block;padding-left:0;margin-top:2px}
+.dmtab tr.hi td{background:var(--wait-bg)}
+.dmtab tr.sub2 td{padding-top:0}
+@media (max-width:760px){
+  .dmtab thead{display:none}
+  .dmtab table,.dmtab tbody{display:block}
+  .dmtab tr{display:flex;flex-wrap:wrap;gap:4px 12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .dmtab td{display:block;padding:0;border:0;font-size:13px}
+  .dmtab td.c-room{flex:0 0 auto;font-size:15px}
+  .dmtab td.c-who{flex:1 1 60%}
+  .dmtab td.c-ins,.dmtab td.c-none{flex:1 1 100%}
+  .dmtab td.c-room:empty{display:none}
+  .dmtab td.c-act{flex:1 1 100%;white-space:normal}
+  .dmtab td.c-file{white-space:normal}
+}
+.dmtab td.c-room{white-space:nowrap}
+.dmtab td.c-st{min-width:8.5em}
+.dmtab td.c-st .lbl{white-space:normal;display:inline-block}
+
+
+.dmtab td.c-file .btn,.dmtab td.c-act .btn{display:flex;margin:0 0 4px}
+.dmtab td.c-file{min-width:5.5em}
+@media (max-width:760px){ .dmtab td.c-file .btn,.dmtab td.c-act .btn{display:inline-flex;margin:0 4px 4px 0} .dmtab td.c-st .lbl{max-width:none} }
